@@ -1,4 +1,4 @@
-# app.py (Complete fixed version - PDF, Buttons, Logo all working)
+# app.py (Fixed - Text wrapping in description & visible currency selector)
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
@@ -95,7 +95,7 @@ FIXED_RATES = {
 }
 
 # ============================================================================
-# CLEAN CSS - NO BLACK BACKGROUNDS, FUNCTIONAL BUTTONS
+# CLEAN CSS - FIXED CURRENCY SELECTOR VISIBILITY
 # ============================================================================
 
 st.markdown("""
@@ -150,7 +150,7 @@ st.markdown("""
         border-bottom: 1px solid #e2e8f0;
     }
     
-    /* Button Styles - ALL FUNCTIONAL */
+    /* Button Styles */
     .stButton > button {
         border-radius: 8px;
         font-weight: 500;
@@ -165,22 +165,11 @@ st.markdown("""
         color: white !important;
     }
     
-    .stButton > button[kind="primary"]:hover {
-        background: linear-gradient(135deg, #1d4ed8, #2563eb);
-        transform: translateY(-1px);
-        box-shadow: 0 4px 6px rgba(37, 99, 235, 0.2);
-    }
-    
     /* Secondary Buttons - Blue Outline */
     .stButton > button:not([kind="primary"]) {
         background: white;
         color: #2563eb !important;
         border: 2px solid #2563eb;
-    }
-    
-    .stButton > button:not([kind="primary"]):hover {
-        background: #eff6ff;
-        transform: translateY(-1px);
     }
     
     /* Success Buttons - Green */
@@ -190,12 +179,6 @@ st.markdown("""
         background: white;
         color: #059669 !important;
         border: 2px solid #059669;
-    }
-    
-    .stButton > button:has(span:contains("Save")):hover,
-    .stButton > button:has(span:contains("Add")):hover,
-    .stButton > button:has(span:contains("Update")):hover {
-        background: #d1fae5;
     }
     
     /* Danger Buttons - Red */
@@ -208,13 +191,6 @@ st.markdown("""
         border: 2px solid #dc2626;
     }
     
-    .stButton > button:has(span:contains("Delete")):hover,
-    .stButton > button:has(span:contains("Remove")):hover,
-    .stButton > button[key*="del"]:hover,
-    .stButton > button[key*="remove"]:hover {
-        background: #fee2e2;
-    }
-    
     /* Edit Buttons - Orange */
     .stButton > button[key*="edit"] {
         background: white;
@@ -224,10 +200,6 @@ st.markdown("""
         font-size: 0.9rem;
     }
     
-    .stButton > button[key*="edit"]:hover {
-        background: #fff7ed;
-    }
-    
     /* PDF Button - Purple */
     .stButton > button:has(span:contains("PDF")) {
         background: white;
@@ -235,19 +207,11 @@ st.markdown("""
         border: 2px solid #7c3aed;
     }
     
-    .stButton > button:has(span:contains("PDF")):hover {
-        background: #ede9fe;
-    }
-    
     /* Email Button - Orange */
     .stButton > button:has(span:contains("Email")) {
         background: white;
         color: #ea580c !important;
         border: 2px solid #ea580c;
-    }
-    
-    .stButton > button:has(span:contains("Email")):hover {
-        background: #fff7ed;
     }
     
     /* New/Reset Buttons - Gray */
@@ -259,12 +223,6 @@ st.markdown("""
         border: 2px solid #4b5563;
     }
     
-    .stButton > button:has(span:contains("New")):hover,
-    .stButton > button:has(span:contains("Reset")):hover,
-    .stButton > button:has(span:contains("Clear")):hover {
-        background: #f3f4f6;
-    }
-    
     /* Sidebar Buttons */
     section[data-testid="stSidebar"] .stButton > button {
         width: 100%;
@@ -273,19 +231,52 @@ st.markdown("""
         margin-bottom: 0.25rem;
     }
     
+    /* FIXED: Currency Selector Visibility */
+    .stSelectbox div[data-baseweb="select"] > div {
+        background-color: white !important;
+        border: 1px solid #cbd5e1 !important;
+        border-radius: 6px !important;
+    }
+    
+    .stSelectbox div[data-baseweb="select"] span {
+        color: #1e293b !important;
+    }
+    
+    .stSelectbox div[data-baseweb="select"] svg {
+        fill: #1e293b !important;
+    }
+    
+    /* Dropdown menu items */
+    div[data-baseweb="menu"] {
+        background-color: white !important;
+        border: 1px solid #e2e8f0 !important;
+        border-radius: 6px !important;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1) !important;
+    }
+    
+    div[data-baseweb="menu"] li {
+        color: #1e293b !important;
+        background-color: white !important;
+    }
+    
+    div[data-baseweb="menu"] li:hover {
+        background-color: #f1f5f9 !important;
+    }
+    
+    div[data-baseweb="menu"] li[aria-selected="true"] {
+        background-color: #e2e8f0 !important;
+        color: #0f172a !important;
+        font-weight: 600;
+    }
+    
     /* Form Inputs */
     .stTextInput input, .stNumberInput input, .stDateInput input,
     .stSelectbox select, .stTextArea textarea {
         border: 1px solid #cbd5e1;
         border-radius: 6px;
         padding: 0.5rem;
-    }
-    
-    .stTextInput input:focus, .stNumberInput input:focus,
-    .stDateInput input:focus, .stSelectbox select:focus,
-    .stTextArea textarea:focus {
-        border-color: #2563eb;
-        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        color: #1e293b !important;
+        background-color: white !important;
     }
     
     /* Logo Container */
@@ -307,6 +298,13 @@ st.markdown("""
         padding: 2rem;
         border: 1px solid #e2e8f0;
         margin: 1rem 0 2rem 0;
+    }
+    
+    /* FIXED: Text wrapping in description */
+    .preview-description {
+        white-space: normal !important;
+        word-wrap: break-word !important;
+        max-width: 300px;
     }
     
     /* Grand Total Box */
@@ -359,11 +357,11 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ============================================================================
-# FIXED PDF GENERATION FUNCTIONS - PROPER FORMATTING
+# FIXED PDF GENERATION FUNCTIONS - WITH TEXT WRAPPING
 # ============================================================================
 
 def generate_pdf_invoice(invoice_data):
-    """Generate PDF invoice - PROPERLY FORMATTED"""
+    """Generate PDF invoice - WITH TEXT WRAPPING"""
     if not PDF_AVAILABLE:
         return None
     
@@ -392,6 +390,14 @@ def generate_pdf_invoice(invoice_data):
             fontSize=10,
             leading=14,
             textColor=colors.HexColor('#1e293b')
+        )
+        
+        # FIXED: Style for wrapped text in description
+        description_style = ParagraphStyle(
+            'Description',
+            parent=normal_style,
+            wordWrap='CJK',  # Enables text wrapping
+            alignment=TA_LEFT
         )
         
         right_style = ParagraphStyle(
@@ -454,7 +460,7 @@ def generate_pdf_invoice(invoice_data):
         story.append(Paragraph(client_text, normal_style))
         story.append(Spacer(1, 20))
         
-        # Items table - FIXED FORMATTING
+        # Items table - FIXED TEXT WRAPPING
         if 'items' in invoice_data and invoice_data['items']:
             # Prepare table data with proper headers
             table_data = [
@@ -465,13 +471,11 @@ def generate_pdf_invoice(invoice_data):
             symbol = get_currency_symbol(currency)
             
             for item in invoice_data['items']:
-                # Handle long descriptions
-                desc = item.get('description', '')
-                if len(desc) > 40:
-                    desc = desc[:37] + '...'
+                # Use Paragraph for description to enable text wrapping
+                desc_para = Paragraph(item.get('description', ''), description_style)
                 
                 table_data.append([
-                    desc,
+                    desc_para,  # This will now wrap text
                     str(item.get('quantity', '1')),
                     f"{symbol}{item.get('unit_price', 0):,.2f}",
                     f"{item.get('tax_rate', 0)}%",
@@ -479,8 +483,8 @@ def generate_pdf_invoice(invoice_data):
                     f"{symbol}{item.get('total', 0):,.2f}"
                 ])
             
-            # Create table with proper column widths
-            col_widths = [2.5*inch, 0.4*inch, 0.8*inch, 0.5*inch, 0.5*inch, 1*inch]
+            # Create table with proper column widths - wider description column for wrapping
+            col_widths = [2.8*inch, 0.4*inch, 0.8*inch, 0.5*inch, 0.5*inch, 1*inch]
             table = Table(table_data, colWidths=col_widths, repeatRows=1)
             
             table.setStyle(TableStyle([
@@ -497,7 +501,7 @@ def generate_pdf_invoice(invoice_data):
                 ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#1e293b')),
                 ('ALIGN', (1, 1), (1, -1), 'CENTER'),  # Qty centered
                 ('ALIGN', (2, 1), (5, -1), 'RIGHT'),   # Amounts right-aligned
-                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),    # Top alignment for wrapped text
                 ('FONTSIZE', (0, 1), (-1, -1), 9),
                 ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#e2e8f0')),
                 ('ALIGN', (0, 1), (0, -1), 'LEFT'),    # Description left-aligned
@@ -723,7 +727,7 @@ with st.sidebar:
     
     st.markdown("---")
     
-    # Currency selector
+    # Currency selector - FIXED VISIBILITY
     st.markdown("### Currency Settings")
     currency_options = list(CURRENCIES.keys())
     
@@ -733,11 +737,13 @@ with st.sidebar:
         current_idx = 0
         st.session_state.currency = 'TTD'
     
+    # The selectbox will now be visible due to CSS fixes
     selected_currency = st.selectbox(
-        "Default Currency",
+        "Select Currency",
         options=currency_options,
         format_func=lambda x: f"{CURRENCIES[x]['name']} ({CURRENCIES[x]['symbol']})",
-        index=current_idx
+        index=current_idx,
+        key="sidebar_currency"
     )
     
     if selected_currency != st.session_state.currency:
@@ -1005,7 +1011,7 @@ if st.session_state.current_page == "create":
             
             st.markdown('</div>', unsafe_allow_html=True)
     
-    # Preview Section - FIXED BUTTON ALIGNMENT
+    # Preview Section
     if st.session_state.invoice_items and client_name:
         st.markdown('<div class="section-header">👁️ Invoice Preview</div>', unsafe_allow_html=True)
         
@@ -1050,7 +1056,7 @@ if st.session_state.current_page == "create":
             
             st.divider()
             
-            # Items Table
+            # Items Table - FIXED TEXT WRAPPING
             items_data = []
             for item in st.session_state.invoice_items:
                 items_data.append({
@@ -1063,19 +1069,29 @@ if st.session_state.current_page == "create":
                 })
             
             if items_data:
-                st.dataframe(
-                    pd.DataFrame(items_data),
-                    use_container_width=True,
-                    hide_index=True,
-                    column_config={
-                        "Description": "Description",
-                        "Qty": st.column_config.NumberColumn("Qty", format="%d"),
-                        "Price": "Price",
-                        "Tax %": "Tax %",
-                        "Disc %": "Disc %",
-                        "Total": "Total"
-                    }
-                )
+                # Use markdown table instead of dataframe for better text wrapping
+                table_html = '<table style="width:100%; border-collapse: collapse;">'
+                table_html += '<tr style="background: #f8fafc; border-bottom: 2px solid #e2e8f0;">'
+                table_html += '<th style="padding: 0.75rem; text-align: left;">Description</th>'
+                table_html += '<th style="padding: 0.75rem; text-align: right;">Qty</th>'
+                table_html += '<th style="padding: 0.75rem; text-align: right;">Price</th>'
+                table_html += '<th style="padding: 0.75rem; text-align: right;">Tax %</th>'
+                table_html += '<th style="padding: 0.75rem; text-align: right;">Disc %</th>'
+                table_html += '<th style="padding: 0.75rem; text-align: right;">Total</th>'
+                table_html += '</tr>'
+                
+                for item in items_data:
+                    table_html += '<tr style="border-bottom: 1px solid #e2e8f0;">'
+                    table_html += f'<td style="padding: 0.75rem; white-space: normal; word-wrap: break-word; max-width: 300px;">{item["Description"]}</td>'
+                    table_html += f'<td style="padding: 0.75rem; text-align: right;">{item["Qty"]}</td>'
+                    table_html += f'<td style="padding: 0.75rem; text-align: right;">{item["Price"]}</td>'
+                    table_html += f'<td style="padding: 0.75rem; text-align: right;">{item["Tax %"]}</td>'
+                    table_html += f'<td style="padding: 0.75rem; text-align: right;">{item["Disc %"]}</td>'
+                    table_html += f'<td style="padding: 0.75rem; text-align: right; font-weight: 600;">{item["Total"]}</td>'
+                    table_html += '</tr>'
+                
+                table_html += '</table>'
+                st.markdown(table_html, unsafe_allow_html=True)
             
             st.divider()
             
@@ -1097,7 +1113,7 @@ if st.session_state.current_page == "create":
             
             st.markdown('</div>', unsafe_allow_html=True)
         
-        # Action Buttons - FIXED ALIGNMENT with proper columns
+        # Action Buttons
         st.markdown("---")
         col1, col2, col3, col4, col5 = st.columns(5)
         
