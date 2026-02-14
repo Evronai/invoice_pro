@@ -57,7 +57,7 @@ except ImportError:
 
 # Page configuration
 st.set_page_config(
-    page_title="TT Invoice Pro",
+    page_title="Invoice Pro",
     page_icon="💰",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -1402,7 +1402,7 @@ elif st.session_state.current_page == "settings":
 
 st.markdown("""
     <div class="app-footer">
-        <p>© 2026 TT Invoice Pro - Professional Invoicing for Trinidad & Tobago</p>
+        <p>© 2026 Invoice Pro - Professional Invoicing</p>
         <p style="font-size: 0.75rem; margin-top: 0.5rem;">Version 2.0</p>
     </div>
 """, unsafe_allow_html=True)
