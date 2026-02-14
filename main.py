@@ -1,4 +1,4 @@
-# app.py (Complete fixed version with visible tabs)
+# app.py (Complete final version with fully visible tabs)
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
@@ -95,7 +95,7 @@ FIXED_RATES = {
 }
 
 # ============================================================================
-# PROFESSIONAL CSS - FIXED TAB VISIBILITY (LIGHT TABS WITH DARK TEXT)
+# PROFESSIONAL CSS - COMPLETELY LIGHT TABS WITH DARK TEXT (NO BLACK TABS)
 # ============================================================================
 
 st.markdown("""
@@ -158,21 +158,21 @@ st.markdown("""
         border-bottom: 1px solid #e2e8f0;
     }
     
-    /* TABS - COMPLETELY FIXED FOR VISIBILITY (LIGHT BACKGROUND, DARK TEXT) */
+    /* TABS - ALL LIGHT WITH DARK TEXT (NO BLACK TABS) */
     .stTabs [data-baseweb="tab-list"] {
         gap: 0.5rem;
         background-color: #ffffff;
         padding: 0.5rem;
         border-radius: 10px;
-        border: 1px solid #d1d5db;
+        border: 1px solid #e2e8f0;
         margin-bottom: 1.5rem;
     }
     
     .stTabs [data-baseweb="tab"] {
-        color: #1f2937 !important;  /* Very dark gray for inactive tabs */
+        color: #1e293b !important;  /* Dark text for ALL tabs */
         font-weight: 500;
         font-size: 1rem;
-        background-color: #f3f4f6;  /* Light gray background */
+        background-color: #f1f5f9;  /* Light gray background for ALL tabs */
         border-radius: 8px;
         padding: 0.5rem 1.2rem;
         transition: all 0.2s ease;
@@ -180,14 +180,13 @@ st.markdown("""
     }
     
     .stTabs [data-baseweb="tab"]:hover {
-        color: #111827 !important;
-        background-color: #e5e7eb;  /* Slightly darker on hover */
-        border-color: #9ca3af;
+        background-color: #e2e8f0;  /* Slightly darker on hover */
+        border-color: #cbd5e1;
     }
     
     .stTabs [aria-selected="true"] {
-        color: #ffffff !important;  /* White text for active tab */
-        background-color: #1e40af !important;  /* Dark blue background */
+        color: #ffffff !important;  /* White text for active tab only */
+        background-color: #1e40af !important;  /* Dark blue for active tab */
         font-weight: 600;
         border: 1px solid #1e3a8a;
     }
@@ -199,11 +198,14 @@ st.markdown("""
         padding: 1rem 0;
     }
     
-    /* Force all text in tabs to be visible */
-    .stTabs [data-baseweb="tab"] div,
-    .stTabs [data-baseweb="tab"] p,
-    .stTabs [data-baseweb="tab"] span {
-        color: inherit !important;
+    /* Force all text in inactive tabs to be dark */
+    .stTabs [data-baseweb="tab"]:not([aria-selected="true"]) {
+        color: #1e293b !important;
+        background-color: #f1f5f9 !important;
+    }
+    
+    .stTabs [data-baseweb="tab"]:not([aria-selected="true"]):hover {
+        background-color: #e2e8f0 !important;
     }
     
     /* Logo styling */
