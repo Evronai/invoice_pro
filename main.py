@@ -1,4 +1,4 @@
-# app.py (Complete fixed version)
+# app.py (Complete fixed version with PDF generation)
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
@@ -39,16 +39,21 @@ try:
 except ImportError:
     STRIPE_AVAILABLE = False
 
+# PDF Generation imports
 try:
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import letter, A4
     from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image as RLImage
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.units import inch
-    from reportlab.lib.enums import TA_RIGHT, TA_CENTER
+    from reportlab.lib.enums import TA_RIGHT, TA_CENTER, TA_LEFT
+    from reportlab.pdfgen import canvas
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
     PDF_AVAILABLE = True
 except ImportError:
     PDF_AVAILABLE = False
+    logger.warning("ReportLab not installed. PDF generation disabled.")
 
 # Page configuration
 st.set_page_config(
@@ -90,7 +95,7 @@ FIXED_RATES = {
 }
 
 # ============================================================================
-# PROFESSIONAL CSS - COMPLETELY FIXED FOR VISIBILITY
+# PROFESSIONAL CSS - FIXED TAB VISIBILITY
 # ============================================================================
 
 st.markdown("""
@@ -101,13 +106,8 @@ st.markdown("""
     /* Global styles */
     .stApp {
         font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-        background-color: #f0f2f6;
-        color: #111827;
-    }
-    
-    /* Ensure all base text is visible */
-    .stMarkdown, .stText, p, li, span, div {
-        color: #111827 !important;
+        background-color: #f8fafc;
+        color: #1e293b;
     }
     
     /* Headers */
@@ -122,7 +122,6 @@ st.markdown("""
         padding: 1.5rem 2rem;
         border-bottom: 1px solid #e2e8f0;
         margin-bottom: 2rem;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.02);
     }
     
     .app-title {
@@ -146,7 +145,7 @@ st.markdown("""
         box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         border: 1px solid #e2e8f0;
         margin-bottom: 1.5rem;
-        color: #111827;
+        color: #1e293b;
     }
     
     /* Section headers */
@@ -165,16 +164,16 @@ st.markdown("""
         background-color: #ffffff;
         padding: 0.5rem;
         border-radius: 10px;
-        border: 1px solid #d1d5db;
+        border: 1px solid #cbd5e1;
         margin-bottom: 1.5rem;
         box-shadow: 0 1px 2px rgba(0,0,0,0.05);
     }
     
     .stTabs [data-baseweb="tab"] {
-        color: #374151 !important;  /* Dark gray for inactive tabs */
+        color: #334155 !important;  /* Dark gray for inactive tabs */
         font-weight: 500;
         font-size: 1rem;
-        background-color: #f9fafb;
+        background-color: #f8fafc;
         border-radius: 8px;
         padding: 0.5rem 1.2rem;
         transition: all 0.2s ease;
@@ -182,22 +181,22 @@ st.markdown("""
     }
     
     .stTabs [data-baseweb="tab"]:hover {
-        color: #111827 !important;
-        background-color: #f3f4f6;
-        border-color: #d1d5db;
+        color: #0f172a !important;
+        background-color: #f1f5f9;
+        border-color: #94a3b8;
     }
     
     .stTabs [aria-selected="true"] {
         color: #ffffff !important;  /* White text for active tab */
-        background-color: #1e3a8a !important;  /* Dark blue background */
+        background-color: #0f172a !important;  /* Dark navy background */
         font-weight: 600;
-        border: 1px solid #1e3a8a;
-        box-shadow: 0 2px 4px rgba(30,58,138,0.2);
+        border: 1px solid #0f172a;
+        box-shadow: 0 2px 4px rgba(15,23,42,0.2);
     }
     
     /* Tab content */
     .stTabs [data-baseweb="tab-panel"] {
-        color: #111827 !important;
+        color: #1e293b !important;
         background-color: transparent;
         padding: 1rem 0;
     }
@@ -216,9 +215,9 @@ st.markdown("""
         align-items: center;
         margin-bottom: 1rem;
         padding: 1rem;
-        background: #f9fafb;
+        background: #f8fafc;
         border-radius: 8px;
-        border: 1px dashed #9ca3af;
+        border: 1px dashed #cbd5e1;
     }
     
     .logo-preview {
@@ -228,7 +227,7 @@ st.markdown("""
         margin: 1rem 0;
     }
     
-    /* Form labels - FIXED for visibility */
+    /* Form labels */
     .stTextInput label,
     .stNumberInput label,
     .stDateInput label,
@@ -237,11 +236,10 @@ st.markdown("""
     .stCheckbox label,
     .stRadio label,
     .stFileUploader label {
-        color: #1f2937 !important;
-        font-weight: 600 !important;
+        color: #1e293b !important;
+        font-weight: 500 !important;
         font-size: 0.9rem !important;
         margin-bottom: 0.25rem !important;
-        opacity: 1 !important;
     }
     
     /* Input fields */
@@ -250,9 +248,9 @@ st.markdown("""
     .stDateInput input,
     .stSelectbox select,
     .stTextArea textarea {
-        color: #111827 !important;
+        color: #1e293b !important;
         background-color: white !important;
-        border: 1px solid #9ca3af !important;
+        border: 1px solid #cbd5e1 !important;
         border-radius: 6px;
         padding: 0.5rem !important;
     }
@@ -262,8 +260,8 @@ st.markdown("""
     .stDateInput input:focus,
     .stSelectbox select:focus,
     .stTextArea textarea:focus {
-        border-color: #1e3a8a !important;
-        box-shadow: 0 0 0 3px rgba(30,58,138,0.2) !important;
+        border-color: #0f172a !important;
+        box-shadow: 0 0 0 2px rgba(15,23,42,0.1) !important;
     }
     
     /* Button styling */
@@ -271,28 +269,27 @@ st.markdown("""
         font-family: 'Inter', sans-serif;
         font-weight: 500;
         border-radius: 6px;
-        border: 1px solid #9ca3af;
+        border: 1px solid #cbd5e1;
         background: white;
-        color: #111827 !important;
+        color: #1e293b !important;
         transition: all 0.2s;
     }
     
     .stButton > button:hover {
-        border-color: #4b5563;
-        background: #f3f4f6;
-        color: #111827 !important;
+        border-color: #94a3b8;
+        background: #f8fafc;
+        color: #0f172a !important;
     }
     
     .stButton > button[kind="primary"] {
-        background: #1e3a8a;
+        background: #0f172a;
         color: white !important;
         border: none;
     }
     
     .stButton > button[kind="primary"]:hover {
-        background: #1e3a8a;
+        background: #1e293b;
         color: white !important;
-        opacity: 0.9;
     }
     
     /* Metric containers */
@@ -304,50 +301,49 @@ st.markdown("""
     }
     
     div[data-testid="metric-container"] label {
-        color: #4b5563 !important;
+        color: #475569 !important;
     }
     
     div[data-testid="metric-container"] div {
-        color: #111827 !important;
-        font-weight: 600;
+        color: #0f172a !important;
     }
     
     /* DataFrame/Table styling */
     .stDataFrame {
-        color: #111827 !important;
+        color: #1e293b !important;
     }
     
     .dataframe th {
-        background-color: #f3f4f6;
-        color: #111827 !important;
+        background-color: #f1f5f9;
+        color: #0f172a !important;
         font-weight: 600;
         padding: 0.75rem;
     }
     
     .dataframe td {
-        color: #111827 !important;
+        color: #1e293b !important;
         padding: 0.75rem;
         border-bottom: 1px solid #e2e8f0;
     }
     
     /* Expanders */
     .streamlit-expanderHeader {
-        color: #111827 !important;
-        background-color: #f3f4f6;
+        color: #1e293b !important;
+        background-color: #f8fafc;
         border-radius: 6px;
         font-weight: 500;
         padding: 0.5rem 1rem;
-        border: 1px solid #d1d5db;
+        border: 1px solid #e2e8f0;
     }
     
     .streamlit-expanderHeader:hover {
-        background-color: #e5e7eb;
+        background-color: #f1f5f9;
     }
     
     .streamlit-expanderContent {
-        color: #111827 !important;
+        color: #1e293b !important;
         background-color: white;
-        border: 1px solid #d1d5db;
+        border: 1px solid #e2e8f0;
         border-top: none;
         border-radius: 0 0 6px 6px;
         padding: 1rem;
@@ -359,7 +355,6 @@ st.markdown("""
         color: #166534 !important;
         border: 1px solid #86efac;
         border-radius: 6px;
-        font-weight: 500;
     }
     
     .stWarning {
@@ -367,7 +362,6 @@ st.markdown("""
         color: #854d0e !important;
         border: 1px solid #fde047;
         border-radius: 6px;
-        font-weight: 500;
     }
     
     .stError {
@@ -375,7 +369,6 @@ st.markdown("""
         color: #991b1b !important;
         border: 1px solid #fecaca;
         border-radius: 6px;
-        font-weight: 500;
     }
     
     .stInfo {
@@ -383,21 +376,19 @@ st.markdown("""
         color: #1e40af !important;
         border: 1px solid #bfdbfe;
         border-radius: 6px;
-        font-weight: 500;
     }
     
-    /* Invoice preview - FIXED */
+    /* Invoice preview */
     .invoice-preview {
         background: white;
         border-radius: 12px;
         padding: 2rem;
-        border: 1px solid #d1d5db;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-        margin-bottom: 1rem;
+        border: 1px solid #e2e8f0;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.02);
     }
     
     .invoice-preview * {
-        color: #111827 !important;
+        color: #1e293b !important;
     }
     
     .invoice-header {
@@ -423,65 +414,64 @@ st.markdown("""
     
     .invoice-title {
         font-size: 2rem;
-        font-weight: 700;
-        color: #1e3a8a !important;
+        font-weight: 600;
+        color: #0f172a !important;
         letter-spacing: -0.02em;
     }
     
     .company-details {
         text-align: right;
-        color: #4b5563 !important;
+        color: #475569 !important;
         line-height: 1.5;
     }
     
     /* Sidebar */
     section[data-testid="stSidebar"] {
         background-color: white;
-        border-right: 1px solid #d1d5db;
+        border-right: 1px solid #e2e8f0;
     }
     
     section[data-testid="stSidebar"] * {
-        color: #111827 !important;
+        color: #1e293b !important;
     }
     
     section[data-testid="stSidebar"] .stButton > button {
         background: white;
-        color: #111827 !important;
-        border: 1px solid #d1d5db;
+        color: #1e293b !important;
+        border: 1px solid #e2e8f0;
         text-align: left;
         justify-content: flex-start;
         margin-bottom: 0.25rem;
     }
     
     section[data-testid="stSidebar"] .stButton > button:hover {
-        background: #f3f4f6;
-        border-color: #9ca3af;
+        background: #f1f5f9;
+        border-color: #94a3b8;
     }
     
     section[data-testid="stSidebar"] .stButton > button[kind="primary"] {
-        background: #1e3a8a;
+        background: #0f172a;
         color: white !important;
         border: none;
     }
     
     section[data-testid="stSidebar"] .stButton > button[kind="primary"]:hover {
-        background: #1e3a8a;
-        opacity: 0.9;
+        background: #1e293b;
     }
     
     /* Footer */
     .app-footer {
         text-align: center;
         padding: 2rem;
-        color: #6b7280 !important;
+        color: #64748b !important;
         font-size: 0.85rem;
-        border-top: 1px solid #d1d5db;
+        border-top: 1px solid #e2e8f0;
         margin-top: 3rem;
         background: white;
     }
     
     .app-footer p {
-        color: #6b7280 !important;
+        color: #64748b !important;
     }
     
     /* File uploader */
@@ -490,20 +480,20 @@ st.markdown("""
     }
     
     .stFileUploader > div {
-        border: 1px dashed #9ca3af;
+        border: 1px dashed #cbd5e1;
         border-radius: 6px;
         padding: 1rem;
-        background: #f9fafb;
+        background: #f8fafc;
     }
     
     .stFileUploader > div:hover {
-        background: #f3f4f6;
-        border-color: #6b7280;
+        background: #f1f5f9;
+        border-color: #94a3b8;
     }
     
     /* Download links */
     a {
-        color: #1e3a8a !important;
+        color: #2563eb !important;
         text-decoration: none;
         font-weight: 500;
     }
@@ -514,7 +504,7 @@ st.markdown("""
     
     /* Placeholder text */
     input::placeholder, textarea::placeholder {
-        color: #9ca3af !important;
+        color: #94a3b8 !important;
         opacity: 1;
         font-style: italic;
     }
@@ -522,53 +512,150 @@ st.markdown("""
     /* Dropdown menu items */
     div[role="listbox"] {
         background-color: white;
-        border: 1px solid #d1d5db;
+        border: 1px solid #e2e8f0;
         border-radius: 6px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
     }
     
     div[role="listbox"] li {
-        color: #111827 !important;
+        color: #1e293b !important;
         padding: 0.5rem 1rem;
     }
     
     div[role="listbox"] li:hover {
-        background-color: #f3f4f6 !important;
+        background-color: #f1f5f9 !important;
     }
     
     div[role="listbox"] li[aria-selected="true"] {
-        background-color: #e5e7eb !important;
+        background-color: #e2e8f0 !important;
         font-weight: 600;
     }
     
-    /* Number input spin buttons */
-    .stNumberInput button {
-        background-color: #f3f4f6 !important;
-        border: 1px solid #9ca3af !important;
-        color: #111827 !important;
-    }
-    
-    .stNumberInput button:hover {
-        background-color: #e5e7eb !important;
-    }
-    
-    /* Horizontal rule */
-    hr {
-        border-color: #d1d5db !important;
-        margin: 1.5rem 0;
-    }
-    
-    /* Code blocks - make sure they don't appear */
-    code, pre {
+    /* Hide any raw code that might appear */
+    pre, code {
         display: none !important;
-    }
-    
-    /* Ensure no raw HTML is displayed */
-    .stMarkdown p:contains("<") {
-        display: none;
     }
     </style>
 """, unsafe_allow_html=True)
+
+# ============================================================================
+# PDF GENERATION FUNCTIONS
+# ============================================================================
+
+def generate_pdf_invoice(invoice_data):
+    """Generate PDF invoice"""
+    if not PDF_AVAILABLE:
+        return None
+    
+    try:
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=A4,
+                               rightMargin=72, leftMargin=72,
+                               topMargin=72, bottomMargin=18)
+        
+        styles = getSampleStyleSheet()
+        story = []
+        
+        # Title
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Heading1'],
+            fontSize=24,
+            textColor=colors.HexColor('#0f172a'),
+            alignment=TA_CENTER,
+            spaceAfter=30
+        )
+        story.append(Paragraph("INVOICE", title_style))
+        story.append(Spacer(1, 20))
+        
+        # Company info
+        company = invoice_data.get('company_info', {})
+        company_text = f"""
+        <b>{company.get('name', '')}</b><br/>
+        {company.get('address', '')}<br/>
+        {company.get('city', '')}<br/>
+        Phone: {company.get('phone', '')}<br/>
+        Email: {company.get('email', '')}
+        """
+        story.append(Paragraph(company_text, styles['Normal']))
+        story.append(Spacer(1, 20))
+        
+        # Invoice details
+        invoice_details = f"""
+        <b>Invoice Number:</b> {invoice_data.get('invoice_number', '')}<br/>
+        <b>Date:</b> {invoice_data.get('invoice_date', '')}<br/>
+        <b>Due Date:</b> {invoice_data.get('due_date', '')}<br/>
+        <b>PO Number:</b> {invoice_data.get('po_number', 'N/A')}
+        """
+        story.append(Paragraph(invoice_details, styles['Normal']))
+        story.append(Spacer(1, 20))
+        
+        # Client info
+        client = invoice_data.get('client', {})
+        client_text = f"""
+        <b>Bill To:</b><br/>
+        {client.get('name', '')}<br/>
+        {client.get('address', '')}<br/>
+        Email: {client.get('email', '')}
+        """
+        story.append(Paragraph(client_text, styles['Normal']))
+        story.append(Spacer(1, 20))
+        
+        # Items table
+        if 'items' in invoice_data and invoice_data['items']:
+            table_data = [['Description', 'Qty', 'Price', 'Tax %', 'Total']]
+            
+            for item in invoice_data['items']:
+                currency = invoice_data.get('currency', 'TTD')
+                symbol = get_currency_symbol(currency)
+                table_data.append([
+                    item.get('description', ''),
+                    str(item.get('quantity', '')),
+                    f"{symbol}{item.get('unit_price', 0):,.2f}",
+                    f"{item.get('tax_rate', 0)}%",
+                    f"{symbol}{item.get('total', 0):,.2f}"
+                ])
+            
+            # Add totals row
+            totals = invoice_data.get('totals', {})
+            table_data.append(['', '', '', 'Subtotal:', f"{symbol}{totals.get('subtotal', 0):,.2f}"])
+            table_data.append(['', '', '', 'Tax:', f"{symbol}{totals.get('tax', 0):,.2f}"])
+            table_data.append(['', '', '', 'Discount:', f"-{symbol}{totals.get('discount', 0):,.2f}"])
+            table_data.append(['', '', '', 'Grand Total:', f"{symbol}{totals.get('grand_total', 0):,.2f}"])
+            
+            table = Table(table_data)
+            table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('BACKGROUND', (0, 1), (-1, -4), colors.beige),
+                ('GRID', (0, 0), (-1, -4), 1, colors.black),
+                ('FONTNAME', (-2, -4), (-1, -1), 'Helvetica-Bold'),
+                ('BACKGROUND', (-2, -4), (-1, -1), colors.lightgrey),
+            ]))
+            story.append(table)
+            story.append(Spacer(1, 20))
+        
+        # Payment details
+        if company.get('bank_details'):
+            story.append(Paragraph("<b>Payment Details:</b>", styles['Normal']))
+            story.append(Paragraph(company['bank_details'], styles['Normal']))
+            story.append(Spacer(1, 20))
+        
+        # Footer
+        footer_text = "Thank you for your business!"
+        story.append(Paragraph(footer_text, styles['Italic']))
+        
+        doc.build(story)
+        buffer.seek(0)
+        return buffer
+        
+    except Exception as e:
+        logger.error(f"PDF generation error: {e}")
+        return None
 
 # ============================================================================
 # DATABASE FUNCTIONS
@@ -591,6 +678,7 @@ def init_database():
                       currency TEXT,
                       subtotal REAL,
                       tax_total REAL,
+                      discount_total REAL,
                       grand_total REAL,
                       status TEXT,
                       created_at TEXT)''')
@@ -680,7 +768,6 @@ def init_session_state():
         'email': 'accounts@yourbusiness.com',
         'tax_id': '123456789',
         'bank_details': 'First Citizens Bank\nAccount: 123456789\nSort Code: 123-456'
-        # Logo fields will be added dynamically when uploaded
     }
     
     defaults = {
@@ -710,8 +797,8 @@ st.markdown("""
                 <h1 class="app-title">TT INVOICE PRO</h1>
                 <div class="app-subtitle">Professional invoicing for Caribbean businesses</div>
             </div>
-            <div style="background: #f3f4f6; padding: 0.5rem 1rem; border-radius: 6px; color: #111827; font-weight: 500; border: 1px solid #d1d5db;">
-                <span style="color: #111827;">TT$</span> <span style="color: #111827;">Trinidad & Tobago Dollar</span>
+            <div style="background: #f1f5f9; padding: 0.5rem 1rem; border-radius: 6px; color: #0f172a; font-weight: 500;">
+                <span style="color: #0f172a;">TT$</span> <span style="color: #0f172a;">Trinidad & Tobago Dollar</span>
             </div>
         </div>
     </div>
@@ -963,15 +1050,15 @@ if st.session_state.current_page == "create":
             total_tax = sum(item['tax_amount'] for item in st.session_state.invoice_items)
             grand_total = sum(item['total'] for item in st.session_state.invoice_items)
             
-            # Build the preview HTML as a single string with proper escaping
-            preview_html = f"""
+            # Build the preview HTML as a single string
+            preview_html = f'''
             <div class="invoice-preview">
                 <div class="invoice-header">
                     <div class="invoice-header-left">
                         {logo_html if logo_html else ''}
                         <div>
                             <div class="invoice-title">INVOICE</div>
-                            <div style="color: #4b5563; margin-top: 0.5rem;">{invoice_number}</div>
+                            <div style="color: #475569; margin-top: 0.5rem;">{invoice_number}</div>
                         </div>
                     </div>
                     <div class="company-details">
@@ -984,78 +1071,78 @@ if st.session_state.current_page == "create":
                 
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-bottom: 2rem;">
                     <div>
-                        <strong style="color: #111827;">Bill To:</strong><br>
-                        <span style="color: #111827;">{client_name}</span><br>
-                        <span style="color: #111827;">{client_address if client_address else ''}</span><br>
-                        <span style="color: #111827;">{client_email}</span>
+                        <strong>Bill To:</strong><br>
+                        {client_name}<br>
+                        {client_address if client_address else ''}<br>
+                        {client_email}
                     </div>
                     <div>
-                        <strong style="color: #111827;">Invoice Details:</strong><br>
-                        <span style="color: #111827;">Date: {invoice_date.strftime('%d %b %Y')}</span><br>
-                        <span style="color: #111827;">Due: {due_date.strftime('%d %b %Y')}</span><br>
-                        <span style="color: #111827;">{f'PO: {po_number}' if po_number else ''}</span>
+                        <strong>Invoice Details:</strong><br>
+                        Date: {invoice_date.strftime('%d %b %Y')}<br>
+                        Due: {due_date.strftime('%d %b %Y')}<br>
+                        {f'PO: {po_number}' if po_number else ''}
                     </div>
                 </div>
                 
                 <table style="width: 100%; border-collapse: collapse;">
                     <thead>
-                        <tr style="background: #f3f4f6; border-bottom: 2px solid #d1d5db;">
-                            <th style="padding: 0.75rem; text-align: left; color: #111827;">Description</th>
-                            <th style="padding: 0.75rem; text-align: right; color: #111827;">Qty</th>
-                            <th style="padding: 0.75rem; text-align: right; color: #111827;">Price</th>
-                            <th style="padding: 0.75rem; text-align: right; color: #111827;">Tax</th>
-                            <th style="padding: 0.75rem; text-align: right; color: #111827;">Total</th>
+                        <tr style="background: #f8fafc; border-bottom: 2px solid #e2e8f0;">
+                            <th style="padding: 0.75rem; text-align: left;">Description</th>
+                            <th style="padding: 0.75rem; text-align: right;">Qty</th>
+                            <th style="padding: 0.75rem; text-align: right;">Price</th>
+                            <th style="padding: 0.75rem; text-align: right;">Tax</th>
+                            <th style="padding: 0.75rem; text-align: right;">Total</th>
                         </tr>
                     </thead>
                     <tbody>
-            """
+            '''
             
             # Add items rows
             for item in st.session_state.invoice_items:
-                preview_html += f"""
-                        <tr style="border-bottom: 1px solid #d1d5db;">
-                            <td style="padding: 0.75rem; color: #111827;">{item['description']}</td>
-                            <td style="padding: 0.75rem; text-align: right; color: #111827;">{item['quantity']}</td>
-                            <td style="padding: 0.75rem; text-align: right; color: #111827;">{format_amount(item['unit_price'], st.session_state.currency)}</td>
-                            <td style="padding: 0.75rem; text-align: right; color: #111827;">{item['tax_rate']}%</td>
-                            <td style="padding: 0.75rem; text-align: right; color: #111827;">{format_amount(item['total'], st.session_state.currency)}</td>
+                preview_html += f'''
+                        <tr style="border-bottom: 1px solid #e2e8f0;">
+                            <td style="padding: 0.75rem;">{item['description']}</td>
+                            <td style="padding: 0.75rem; text-align: right;">{item['quantity']}</td>
+                            <td style="padding: 0.75rem; text-align: right;">{format_amount(item['unit_price'], st.session_state.currency)}</td>
+                            <td style="padding: 0.75rem; text-align: right;">{item['tax_rate']}%</td>
+                            <td style="padding: 0.75rem; text-align: right;">{format_amount(item['total'], st.session_state.currency)}</td>
                         </tr>
-                """
+                '''
             
             # Add footer with totals
-            preview_html += f"""
+            preview_html += f'''
                     </tbody>
                 </table>
                 
                 <div style="margin-top: 2rem; display: flex; justify-content: flex-end;">
                     <table style="width: 300px;">
                         <tr>
-                            <td style="padding: 0.25rem; color: #111827;">Subtotal:</td>
-                            <td style="padding: 0.25rem; text-align: right; color: #111827;">{format_amount(subtotal, st.session_state.currency)}</td>
+                            <td style="padding: 0.25rem;">Subtotal:</td>
+                            <td style="padding: 0.25rem; text-align: right;">{format_amount(subtotal, st.session_state.currency)}</td>
                         </tr>
                         <tr>
-                            <td style="padding: 0.25rem; color: #111827;">Discount:</td>
-                            <td style="padding: 0.25rem; text-align: right; color: #111827;">-{format_amount(total_discount, st.session_state.currency)}</td>
+                            <td style="padding: 0.25rem;">Discount:</td>
+                            <td style="padding: 0.25rem; text-align: right;">-{format_amount(total_discount, st.session_state.currency)}</td>
                         </tr>
                         <tr>
-                            <td style="padding: 0.25rem; color: #111827;">Tax:</td>
-                            <td style="padding: 0.25rem; text-align: right; color: #111827;">{format_amount(total_tax, st.session_state.currency)}</td>
+                            <td style="padding: 0.25rem;">Tax:</td>
+                            <td style="padding: 0.25rem; text-align: right;">{format_amount(total_tax, st.session_state.currency)}</td>
                         </tr>
-                        <tr style="border-top: 2px solid #d1d5db;">
-                            <td style="padding: 0.5rem 0.25rem; font-weight: 600; color: #111827;">Total:</td>
-                            <td style="padding: 0.5rem 0.25rem; text-align: right; font-weight: 600; font-size: 1.2rem; color: #111827;">{format_amount(grand_total, st.session_state.currency)}</td>
+                        <tr style="border-top: 2px solid #e2e8f0;">
+                            <td style="padding: 0.5rem 0.25rem; font-weight: 600;">Total:</td>
+                            <td style="padding: 0.5rem 0.25rem; text-align: right; font-weight: 600; font-size: 1.2rem;">{format_amount(grand_total, st.session_state.currency)}</td>
                         </tr>
                     </table>
                 </div>
                 
-                <div style="margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #d1d5db; color: #4b5563;">
-                    <strong style="color: #111827;">Payment Details:</strong><br>
-                    <span style="color: #4b5563;">{st.session_state.company_info.get('bank_details', 'Bank details not provided')}</span>
+                <div style="margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #e2e8f0; color: #475569;">
+                    <strong>Payment Details:</strong><br>
+                    {st.session_state.company_info.get('bank_details', 'Bank details not provided')}
                 </div>
             </div>
-            """
+            '''
             
-            # Display the preview - use markdown with unsafe_allow_html=True
+            # Display the preview
             st.markdown(preview_html, unsafe_allow_html=True)
         
         with preview_col2:
@@ -1069,22 +1156,54 @@ if st.session_state.current_page == "create":
                         c = conn.cursor()
                         c.execute('''INSERT INTO invoices 
                                    (invoice_number, client_name, client_email, invoice_date, 
-                                    due_date, currency, subtotal, tax_total, grand_total, status, created_at)
-                                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                                    due_date, currency, subtotal, tax_total, discount_total,
+                                    grand_total, status, created_at)
+                                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
                                  (invoice_number, client_name, client_email, str(invoice_date),
                                   str(due_date), st.session_state.currency, subtotal, 
-                                  total_tax, grand_total, 'draft', datetime.now().isoformat()))
+                                  total_tax, total_discount, grand_total, 'draft', datetime.now().isoformat()))
                         conn.commit()
                         conn.close()
                         st.success("Invoice saved successfully!")
                     except Exception as e:
                         st.error(f"Error saving: {e}")
                 
+                # PDF Generation
                 if PDF_AVAILABLE:
                     if st.button("📄 Download PDF", use_container_width=True):
-                        st.info("PDF generation - will be implemented")
+                        with st.spinner("Generating PDF..."):
+                            # Prepare invoice data for PDF
+                            invoice_data = {
+                                'invoice_number': invoice_number,
+                                'invoice_date': invoice_date.strftime('%d %b %Y'),
+                                'due_date': due_date.strftime('%d %b %Y'),
+                                'po_number': po_number,
+                                'client': {
+                                    'name': client_name,
+                                    'email': client_email,
+                                    'address': client_address
+                                },
+                                'company_info': st.session_state.company_info,
+                                'items': st.session_state.invoice_items,
+                                'currency': st.session_state.currency,
+                                'totals': {
+                                    'subtotal': subtotal,
+                                    'discount': total_discount,
+                                    'tax': total_tax,
+                                    'grand_total': grand_total
+                                }
+                            }
+                            
+                            pdf_buffer = generate_pdf_invoice(invoice_data)
+                            if pdf_buffer:
+                                b64 = base64.b64encode(pdf_buffer.getvalue()).decode()
+                                href = f'<a href="data:application/pdf;base64,{b64}" download="invoice_{invoice_number}.pdf" style="display: inline-block; padding: 0.5rem 1rem; background: #0f172a; color: white; text-decoration: none; border-radius: 6px; margin-top: 0.5rem;">Click to Download PDF</a>'
+                                st.markdown(href, unsafe_allow_html=True)
+                                st.success("PDF generated successfully!")
+                            else:
+                                st.error("Failed to generate PDF")
                 else:
-                    st.info("PDF generation: pip install reportlab")
+                    st.info("PDF generation requires: pip install reportlab")
                 
                 st.markdown("##### Email Invoice")
                 email_to = st.text_input("Send to", value=client_email if client_email else "")
@@ -1192,7 +1311,7 @@ elif st.session_state.current_page == "reports":
     st.markdown('</div>', unsafe_allow_html=True)
 
 # ============================================================================
-# SETTINGS PAGE - FIXED VERSION
+# SETTINGS PAGE
 # ============================================================================
 
 elif st.session_state.current_page == "settings":
@@ -1224,12 +1343,11 @@ elif st.session_state.current_page == "settings":
                 st.markdown(f'<div class="logo-container">{get_logo_html("80px", "200px")}</div>', unsafe_allow_html=True)
                 st.markdown('</div>', unsafe_allow_html=True)
                 
-                # Remove button is outside any form
                 if st.button("🗑️ Remove Logo", use_container_width=True, key="remove_logo_settings"):
                     remove_logo()
                     st.rerun()
             
-            st.markdown("---")  # Visual separator
+            st.markdown("---")
             
             # COMPANY INFORMATION FORM
             with st.form("company_settings_form"):
@@ -1247,7 +1365,6 @@ elif st.session_state.current_page == "settings":
                 
                 comp_bank = st.text_area("Bank Details", value=st.session_state.company_info.get('bank_details', ''), height=100)
                 
-                # Form submit button (only button allowed inside form)
                 submitted = st.form_submit_button("💾 Save Company Settings", use_container_width=True)
                 
                 if submitted:
