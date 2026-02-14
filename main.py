@@ -1,4 +1,4 @@
-# app.py (updated with logo upload)
+# app.py (updated with form fix)
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
@@ -1115,7 +1115,7 @@ elif st.session_state.current_page == "reports":
     st.markdown('</div>', unsafe_allow_html=True)
 
 # ============================================================================
-# SETTINGS PAGE
+# SETTINGS PAGE - FIXED VERSION
 # ============================================================================
 
 elif st.session_state.current_page == "settings":
@@ -1128,7 +1128,37 @@ elif st.session_state.current_page == "settings":
             st.markdown('<div class="business-card">', unsafe_allow_html=True)
             st.markdown("##### Company Information")
             
-            with st.form("company_settings"):
+            # LOGO SECTION - OUTSIDE THE FORM
+            st.markdown("##### Company Logo")
+            st.markdown("Upload your company logo for invoices")
+            
+            logo_file = st.file_uploader(
+                "Choose logo image (PNG, JPG, JPEG)",
+                type=['png', 'jpg', 'jpeg'],
+                key="settings_logo_upload"
+            )
+            
+            if logo_file is not None:
+                if save_logo(logo_file):
+                    st.success(f"Logo uploaded: {logo_file.name}")
+            
+            # Show current logo and remove button (outside form)
+            if st.session_state.company_info.get('logo_base64'):
+                st.markdown('<div class="logo-preview">', unsafe_allow_html=True)
+                st.markdown(f'<div class="logo-container">{get_logo_html("80px", "200px")}</div>', unsafe_allow_html=True)
+                st.markdown('</div>', unsafe_allow_html=True)
+                
+                # Remove button is outside any form
+                if st.button("🗑️ Remove Logo", use_container_width=True):
+                    remove_logo()
+                    st.rerun()
+            
+            st.markdown("---")  # Visual separator
+            
+            # COMPANY INFORMATION FORM
+            with st.form("company_settings_form"):
+                st.markdown("##### Company Details")
+                
                 col1, col2 = st.columns(2)
                 with col1:
                     comp_name = st.text_input("Company Name", value=st.session_state.company_info['name'])
@@ -1141,32 +1171,10 @@ elif st.session_state.current_page == "settings":
                 
                 comp_bank = st.text_area("Bank Details", value=st.session_state.company_info.get('bank_details', ''), height=100)
                 
-                # Logo upload in settings
-                st.markdown("##### Company Logo")
-                st.markdown("Upload your company logo for invoices")
-                logo_file = st.file_uploader(
-                    "Choose logo image (PNG, JPG, JPEG)",
-                    type=['png', 'jpg', 'jpeg'],
-                    key="settings_logo"
-                )
+                # Form submit button (only button allowed inside form)
+                submitted = st.form_submit_button("💾 Save Company Settings", use_container_width=True)
                 
-                if logo_file is not None:
-                    if save_logo(logo_file):
-                        st.success(f"Logo uploaded: {logo_file.name}")
-                
-                # Show current logo
-                if st.session_state.company_info.get('logo_base64'):
-                    st.markdown('<div class="logo-preview">', unsafe_allow_html=True)
-                    st.markdown(f'<div class="logo-container">{get_logo_html("80px", "200px")}</div>', unsafe_allow_html=True)
-                    st.markdown('</div>', unsafe_allow_html=True)
-                    
-                    col_remove, _ = st.columns(2)
-                    with col_remove:
-                        if st.button("Remove Logo"):
-                            remove_logo()
-                            st.rerun()
-                
-                if st.form_submit_button("Save Settings", use_container_width=True):
+                if submitted:
                     st.session_state.company_info.update({
                         'name': comp_name,
                         'address': comp_address,
@@ -1176,7 +1184,7 @@ elif st.session_state.current_page == "settings":
                         'tax_id': comp_tax,
                         'bank_details': comp_bank
                     })
-                    st.success("Settings saved!")
+                    st.success("Company settings saved successfully!")
             
             st.markdown('</div>', unsafe_allow_html=True)
     
@@ -1230,8 +1238,8 @@ elif st.session_state.current_page == "settings":
                         st.warning("No database file found")
             
             with col2:
-                uploaded_file = st.file_uploader("Restore from Backup", type=['db'])
-                if uploaded_file:
+                uploaded_file = st.file_uploader("Restore from Backup", type=['db'], key="db_restore")
+                if uploaded_file is not None:
                     if st.button("Restore Database", use_container_width=True):
                         try:
                             with open('invoices.db', 'wb') as f:
