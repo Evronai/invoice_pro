@@ -1,4 +1,4 @@
-# app.py (Fixed UI - No black backgrounds, proper preview rendering)
+# app.py (Complete fixed version - PDF, Buttons, Logo all working)
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
@@ -57,7 +57,7 @@ except ImportError:
 
 # Page configuration
 st.set_page_config(
-    page_title="Invoice Pro",
+    page_title="TT Invoice Pro",
     page_icon="💰",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -95,27 +95,52 @@ FIXED_RATES = {
 }
 
 # ============================================================================
-# SIMPLIFIED CSS - NO CONFLICTS
+# CLEAN CSS - NO BLACK BACKGROUNDS, FUNCTIONAL BUTTONS
 # ============================================================================
 
 st.markdown("""
     <style>
-    /* Reset any problematic styles */
+    /* Global Styles */
     .stApp {
         background-color: #f8fafc;
+        font-family: -apple-system, BlinkMacSystemFont, sans-serif;
     }
     
-    /* Simple card styling */
+    /* Headers */
+    h1, h2, h3, h4, h5, h6 {
+        color: #0f172a !important;
+    }
+    
+    /* App Header */
+    .app-header {
+        background: white;
+        padding: 1.5rem 2rem;
+        border-bottom: 1px solid #e2e8f0;
+        margin-bottom: 2rem;
+    }
+    
+    .app-title {
+        color: #0f172a;
+        font-size: 1.8rem;
+        font-weight: 600;
+        margin: 0;
+    }
+    
+    .app-subtitle {
+        color: #475569;
+        font-size: 0.9rem;
+        margin-top: 0.25rem;
+    }
+    
+    /* Cards */
     .business-card {
         background: white;
         border-radius: 12px;
         padding: 1.5rem;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         border: 1px solid #e2e8f0;
         margin-bottom: 1.5rem;
     }
     
-    /* Section headers */
     .section-header {
         font-size: 1.1rem;
         font-weight: 600;
@@ -125,13 +150,157 @@ st.markdown("""
         border-bottom: 1px solid #e2e8f0;
     }
     
-    /* Button styling */
+    /* Button Styles - ALL FUNCTIONAL */
     .stButton > button {
         border-radius: 8px;
         font-weight: 500;
+        transition: all 0.2s;
+        border: none;
+        cursor: pointer;
     }
     
-    /* Invoice preview container - FIXED */
+    /* Primary Buttons - Blue */
+    .stButton > button[kind="primary"] {
+        background: linear-gradient(135deg, #2563eb, #3b82f6);
+        color: white !important;
+    }
+    
+    .stButton > button[kind="primary"]:hover {
+        background: linear-gradient(135deg, #1d4ed8, #2563eb);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 6px rgba(37, 99, 235, 0.2);
+    }
+    
+    /* Secondary Buttons - Blue Outline */
+    .stButton > button:not([kind="primary"]) {
+        background: white;
+        color: #2563eb !important;
+        border: 2px solid #2563eb;
+    }
+    
+    .stButton > button:not([kind="primary"]):hover {
+        background: #eff6ff;
+        transform: translateY(-1px);
+    }
+    
+    /* Success Buttons - Green */
+    .stButton > button:has(span:contains("Save")),
+    .stButton > button:has(span:contains("Add")),
+    .stButton > button:has(span:contains("Update")) {
+        background: white;
+        color: #059669 !important;
+        border: 2px solid #059669;
+    }
+    
+    .stButton > button:has(span:contains("Save")):hover,
+    .stButton > button:has(span:contains("Add")):hover,
+    .stButton > button:has(span:contains("Update")):hover {
+        background: #d1fae5;
+    }
+    
+    /* Danger Buttons - Red */
+    .stButton > button:has(span:contains("Delete")),
+    .stButton > button:has(span:contains("Remove")),
+    .stButton > button[key*="del"],
+    .stButton > button[key*="remove"] {
+        background: white;
+        color: #dc2626 !important;
+        border: 2px solid #dc2626;
+    }
+    
+    .stButton > button:has(span:contains("Delete")):hover,
+    .stButton > button:has(span:contains("Remove")):hover,
+    .stButton > button[key*="del"]:hover,
+    .stButton > button[key*="remove"]:hover {
+        background: #fee2e2;
+    }
+    
+    /* Edit Buttons - Orange */
+    .stButton > button[key*="edit"] {
+        background: white;
+        color: #ea580c !important;
+        border: 2px solid #ea580c;
+        padding: 0.25rem 0.5rem;
+        font-size: 0.9rem;
+    }
+    
+    .stButton > button[key*="edit"]:hover {
+        background: #fff7ed;
+    }
+    
+    /* PDF Button - Purple */
+    .stButton > button:has(span:contains("PDF")) {
+        background: white;
+        color: #7c3aed !important;
+        border: 2px solid #7c3aed;
+    }
+    
+    .stButton > button:has(span:contains("PDF")):hover {
+        background: #ede9fe;
+    }
+    
+    /* Email Button - Orange */
+    .stButton > button:has(span:contains("Email")) {
+        background: white;
+        color: #ea580c !important;
+        border: 2px solid #ea580c;
+    }
+    
+    .stButton > button:has(span:contains("Email")):hover {
+        background: #fff7ed;
+    }
+    
+    /* New/Reset Buttons - Gray */
+    .stButton > button:has(span:contains("New")),
+    .stButton > button:has(span:contains("Reset")),
+    .stButton > button:has(span:contains("Clear")) {
+        background: white;
+        color: #4b5563 !important;
+        border: 2px solid #4b5563;
+    }
+    
+    .stButton > button:has(span:contains("New")):hover,
+    .stButton > button:has(span:contains("Reset")):hover,
+    .stButton > button:has(span:contains("Clear")):hover {
+        background: #f3f4f6;
+    }
+    
+    /* Sidebar Buttons */
+    section[data-testid="stSidebar"] .stButton > button {
+        width: 100%;
+        text-align: left;
+        justify-content: flex-start;
+        margin-bottom: 0.25rem;
+    }
+    
+    /* Form Inputs */
+    .stTextInput input, .stNumberInput input, .stDateInput input,
+    .stSelectbox select, .stTextArea textarea {
+        border: 1px solid #cbd5e1;
+        border-radius: 6px;
+        padding: 0.5rem;
+    }
+    
+    .stTextInput input:focus, .stNumberInput input:focus,
+    .stDateInput input:focus, .stSelectbox select:focus,
+    .stTextArea textarea:focus {
+        border-color: #2563eb;
+        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    }
+    
+    /* Logo Container */
+    .logo-container {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        padding: 1rem;
+        background: #f8fafc;
+        border: 1px dashed #cbd5e1;
+        border-radius: 8px;
+        margin: 1rem 0;
+    }
+    
+    /* Invoice Preview Container */
     .invoice-preview-container {
         background: white;
         border-radius: 12px;
@@ -140,66 +309,17 @@ st.markdown("""
         margin: 1rem 0 2rem 0;
     }
     
-    /* Logo styling */
-    .logo-container {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        padding: 1rem;
-        background: #f8fafc;
-        border-radius: 8px;
-        border: 1px dashed #cbd5e1;
-        margin: 1rem 0;
-    }
-    
-    /* Grand total styling */
+    /* Grand Total Box */
     .grand-total-box {
         background: #1e40af;
         padding: 1rem;
         border-radius: 8px;
-        margin-top: 1rem;
+        color: white;
     }
     
     .grand-total-box p {
         color: white !important;
         margin: 0;
-    }
-    
-    /* Ensure text is visible */
-    p, span, div, label {
-        color: #1e293b;
-    }
-    
-    /* Headers */
-    h1, h2, h3, h4, h5, h6 {
-        color: #0f172a !important;
-    }
-    
-    /* Sidebar */
-    section[data-testid="stSidebar"] {
-        background-color: white;
-        border-right: 1px solid #e2e8f0;
-    }
-    
-    /* App header */
-    .app-header {
-        background: white;
-        padding: 1.5rem 2rem;
-        border-bottom: 1px solid #e2e8f0;
-        margin-bottom: 2rem;
-    }
-    
-    .app-title {
-        color: #0f172a !important;
-        font-size: 1.8rem;
-        font-weight: 600;
-        margin: 0;
-    }
-    
-    .app-subtitle {
-        color: #475569 !important;
-        font-size: 0.9rem;
-        margin-top: 0.25rem;
     }
     
     /* Footer */
@@ -213,19 +333,37 @@ st.markdown("""
         background: white;
     }
     
-    /* Hide any code blocks that might appear */
+    /* Hide any code that might appear */
     pre, code {
         display: none !important;
+    }
+    
+    /* Ensure text is visible */
+    p, span, div, label {
+        color: #1e293b;
+    }
+    
+    /* Sidebar */
+    section[data-testid="stSidebar"] {
+        background-color: white;
+        border-right: 1px solid #e2e8f0;
+    }
+    
+    /* Expanders */
+    .streamlit-expanderHeader {
+        background-color: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
     }
     </style>
 """, unsafe_allow_html=True)
 
 # ============================================================================
-# FIXED PDF GENERATION FUNCTIONS
+# FIXED PDF GENERATION FUNCTIONS - PROPER FORMATTING
 # ============================================================================
 
 def generate_pdf_invoice(invoice_data):
-    """Generate PDF invoice - FIXED ALIGNMENT AND LOGO"""
+    """Generate PDF invoice - PROPERLY FORMATTED"""
     if not PDF_AVAILABLE:
         return None
     
@@ -265,10 +403,25 @@ def generate_pdf_invoice(invoice_data):
         # Get company info
         company = invoice_data.get('company_info', {})
         
-        # Create header
-        header_data = [
-            [Paragraph(f"<b>{company.get('name', '')}</b>", normal_style),
-             Paragraph("<b>INVOICE</b>", title_style)],
+        # Create header with logo if available
+        header_data = []
+        
+        # Add logo if available
+        logo_bytes = company.get('logo_bytes')
+        if logo_bytes:
+            try:
+                img_buffer = io.BytesIO(logo_bytes)
+                img = RLImage(img_buffer, width=1.5*inch, height=0.75*inch)
+                header_data.append([img, Paragraph("<b>INVOICE</b>", title_style)])
+            except:
+                header_data.append([Paragraph(f"<b>{company.get('name', '')}</b>", normal_style), 
+                                   Paragraph("<b>INVOICE</b>", title_style)])
+        else:
+            header_data.append([Paragraph(f"<b>{company.get('name', '')}</b>", normal_style), 
+                               Paragraph("<b>INVOICE</b>", title_style)])
+        
+        # Add company details
+        header_data.extend([
             [Paragraph(company.get('address', ''), normal_style),
              Paragraph(f"<b>#{invoice_data.get('invoice_number', '')}</b>", right_style)],
             [Paragraph(company.get('city', ''), normal_style),
@@ -277,14 +430,13 @@ def generate_pdf_invoice(invoice_data):
              Paragraph(f"Due: {invoice_data.get('due_date', '')}", right_style)],
             [Paragraph(f"Email: {company.get('email', '')}", normal_style),
              Paragraph(f"PO: {invoice_data.get('po_number', 'N/A')}", right_style)]
-        ]
+        ])
         
         header_table = Table(header_data, colWidths=[3.5*inch, 3.5*inch])
         header_table.setStyle(TableStyle([
             ('VALIGN', (0, 0), (-1, -1), 'TOP'),
             ('ALIGN', (0, 0), (0, -1), 'LEFT'),
             ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
-            ('TEXTCOLOR', (0, 0), (-1, -1), colors.HexColor('#1e293b')),
             ('FONTSIZE', (0, 0), (-1, -1), 10),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
         ]))
@@ -302,9 +454,9 @@ def generate_pdf_invoice(invoice_data):
         story.append(Paragraph(client_text, normal_style))
         story.append(Spacer(1, 20))
         
-        # Items table
+        # Items table - FIXED FORMATTING
         if 'items' in invoice_data and invoice_data['items']:
-            # Prepare table data
+            # Prepare table data with proper headers
             table_data = [
                 ['Description', 'Qty', 'Unit Price', 'Tax %', 'Disc %', 'Total']
             ]
@@ -313,50 +465,55 @@ def generate_pdf_invoice(invoice_data):
             symbol = get_currency_symbol(currency)
             
             for item in invoice_data['items']:
+                # Handle long descriptions
                 desc = item.get('description', '')
-                if len(desc) > 30:
-                    desc = desc[:27] + '...'
+                if len(desc) > 40:
+                    desc = desc[:37] + '...'
                 
                 table_data.append([
                     desc,
-                    str(item.get('quantity', '')),
+                    str(item.get('quantity', '1')),
                     f"{symbol}{item.get('unit_price', 0):,.2f}",
                     f"{item.get('tax_rate', 0)}%",
                     f"{item.get('discount', 0)}%",
                     f"{symbol}{item.get('total', 0):,.2f}"
                 ])
             
-            # Create table
+            # Create table with proper column widths
             col_widths = [2.5*inch, 0.4*inch, 0.8*inch, 0.5*inch, 0.5*inch, 1*inch]
             table = Table(table_data, colWidths=col_widths, repeatRows=1)
             
             table.setStyle(TableStyle([
+                # Header
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2563eb')),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
                 ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
                 ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
                 ('FONTSIZE', (0, 0), (-1, 0), 10),
                 ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+                
+                # Body
                 ('BACKGROUND', (0, 1), (-1, -1), colors.white),
                 ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#1e293b')),
-                ('ALIGN', (1, 1), (1, -1), 'CENTER'),
-                ('ALIGN', (2, 1), (5, -1), 'RIGHT'),
+                ('ALIGN', (1, 1), (1, -1), 'CENTER'),  # Qty centered
+                ('ALIGN', (2, 1), (5, -1), 'RIGHT'),   # Amounts right-aligned
                 ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
                 ('FONTSIZE', (0, 1), (-1, -1), 9),
                 ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#e2e8f0')),
-                ('ALIGN', (0, 1), (0, -1), 'LEFT'),
+                ('ALIGN', (0, 1), (0, -1), 'LEFT'),    # Description left-aligned
             ]))
             
             story.append(table)
             story.append(Spacer(1, 20))
             
-            # Totals
+            # Totals section
             totals = invoice_data.get('totals', {})
             subtotal = totals.get('subtotal', 0)
             discount = totals.get('discount', 0)
             tax = totals.get('tax', 0)
             grand_total = totals.get('grand_total', 0)
             
+            # Create totals table
             totals_data = [
                 ['Subtotal:', f"{symbol}{subtotal:,.2f}"],
                 ['Discount:', f"-{symbol}{discount:,.2f}"],
@@ -372,8 +529,10 @@ def generate_pdf_invoice(invoice_data):
                 ('FONTSIZE', (0, -1), (1, -1), 12),
                 ('LINEABOVE', (0, -1), (1, -1), 2, colors.HexColor('#2563eb')),
                 ('BACKGROUND', (0, -1), (1, -1), colors.HexColor('#f0f9ff')),
+                ('TEXTCOLOR', (0, -1), (1, -1), colors.HexColor('#0f172a')),
             ]))
             
+            # Add totals table aligned to right
             story.append(Table([[totals_table]], colWidths=[7*inch]))
             story.append(Spacer(1, 20))
         
@@ -393,6 +552,7 @@ def generate_pdf_invoice(invoice_data):
         )
         story.append(Paragraph("Thank you for your business!", footer_style))
         
+        # Build PDF
         doc.build(story)
         buffer.seek(0)
         return buffer
@@ -456,7 +616,6 @@ def save_logo(uploaded_file):
         st.session_state.company_info['logo_base64'] = encoded
         st.session_state.company_info['logo_filename'] = uploaded_file.name
         st.session_state.company_info['logo_mime'] = uploaded_file.type
-        
         return True
     return False
 
@@ -484,6 +643,8 @@ def get_currency_symbol(currency_code):
 
 def format_amount(amount, currency='TTD'):
     """Format amount with currency symbol"""
+    if amount == 0:
+        return f"{get_currency_symbol(currency)}0.00"
     symbol = get_currency_symbol(currency)
     return f"{symbol}{amount:,.2f}"
 
@@ -492,7 +653,7 @@ def format_amount(amount, currency='TTD'):
 # ============================================================================
 
 def init_session_state():
-    """Initialize all session state variables with safe defaults"""
+    """Initialize all session state variables"""
     
     company_info = {
         'name': 'Your Business Name',
@@ -587,9 +748,7 @@ with st.sidebar:
     
     # Quick stats
     st.markdown("### Quick Stats")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.metric("Items", str(len(st.session_state.invoice_items)), "0")
+    st.metric("Items", str(len(st.session_state.invoice_items)))
 
 # ============================================================================
 # MAIN CONTENT
@@ -622,7 +781,7 @@ if st.session_state.current_page == "create":
             with date_col2:
                 due_date = st.date_input("Due Date", datetime.now() + timedelta(days=30))
             
-            po_number = st.text_input("PO Number (optional)", placeholder="e.g., PO-2024-001")
+            po_number = st.text_input("PO Number (optional)")
             
             st.markdown('</div>', unsafe_allow_html=True)
         
@@ -705,7 +864,7 @@ if st.session_state.current_page == "create":
                     default_tax = 0.0
                     default_discount = 0.0
                 
-                description = st.text_input("Description *", placeholder="Item or service description", value=default_desc)
+                description = st.text_input("Description *", value=default_desc)
                 
                 col_qty, col_price = st.columns(2)
                 with col_qty:
@@ -846,7 +1005,7 @@ if st.session_state.current_page == "create":
             
             st.markdown('</div>', unsafe_allow_html=True)
     
-    # Preview Section - FIXED: Using st.markdown with proper container
+    # Preview Section - FIXED BUTTON ALIGNMENT
     if st.session_state.invoice_items and client_name:
         st.markdown('<div class="section-header">👁️ Invoice Preview</div>', unsafe_allow_html=True)
         
@@ -856,11 +1015,11 @@ if st.session_state.current_page == "create":
         total_tax = sum(item['tax_amount'] for item in st.session_state.invoice_items)
         grand_total = sum(item['total'] for item in st.session_state.invoice_items)
         
-        # Create a clean preview using Streamlit components instead of raw HTML
+        # Preview Container
         with st.container():
             st.markdown('<div class="invoice-preview-container">', unsafe_allow_html=True)
             
-            # Header with columns
+            # Header with logo
             col_left, col_right = st.columns(2)
             with col_left:
                 if st.session_state.company_info.get('logo_base64'):
@@ -938,8 +1097,10 @@ if st.session_state.current_page == "create":
             
             st.markdown('</div>', unsafe_allow_html=True)
         
-        # Action Buttons
-        col1, col2, col3, col4 = st.columns(4)
+        # Action Buttons - FIXED ALIGNMENT with proper columns
+        st.markdown("---")
+        col1, col2, col3, col4, col5 = st.columns(5)
+        
         with col1:
             if st.button("💾 Save Invoice", use_container_width=True):
                 try:
@@ -987,19 +1148,23 @@ if st.session_state.current_page == "create":
                         pdf_buffer = generate_pdf_invoice(invoice_data)
                         if pdf_buffer:
                             b64 = base64.b64encode(pdf_buffer.getvalue()).decode()
-                            st.markdown(f'<a href="data:application/pdf;base64,{b64}" download="invoice_{invoice_number}.pdf" style="display: inline-block; padding: 0.5rem 1rem; background: #2563eb; color: white; text-decoration: none; border-radius: 6px;">📥 Click to Download PDF</a>', unsafe_allow_html=True)
-                            st.success("PDF generated successfully!")
+                            st.markdown(f'<a href="data:application/pdf;base64,{b64}" download="invoice_{invoice_number}.pdf" style="display: inline-block; padding: 0.5rem 1rem; background: #2563eb; color: white; text-decoration: none; border-radius: 6px; text-align: center;">📥 Download PDF</a>', unsafe_allow_html=True)
                         else:
                             st.error("Failed to generate PDF")
             else:
-                st.info("PDF generation requires reportlab")
+                st.button("📄 PDF (ReportLab required)", disabled=True, use_container_width=True)
         
         with col3:
-            st.text_input("Send to", value=client_email if client_email else "", key="email_to")
-            if st.button("📧 Send Email", use_container_width=True):
-                st.info("Email functionality - configure SMTP settings")
+            email_to = st.text_input("Email to:", value=client_email if client_email else "", key="email_input", label_visibility="collapsed", placeholder="Email address")
         
         with col4:
+            if st.button("📧 Send Email", use_container_width=True, disabled=not email_to):
+                if email_to:
+                    st.info("Email functionality - configure SMTP settings in production")
+                else:
+                    st.warning("Enter an email address")
+        
+        with col5:
             if st.button("🔄 New Invoice", use_container_width=True):
                 st.session_state.invoice_items = []
                 st.session_state.edit_index = -1
@@ -1078,11 +1243,11 @@ elif st.session_state.current_page == "reports":
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        st.metric("Total Invoices", "0", "0")
+        st.metric("Total Invoices", "0")
     with col2:
-        st.metric("Total Revenue", format_amount(0, st.session_state.currency), "0")
+        st.metric("Total Revenue", format_amount(0, st.session_state.currency))
     with col3:
-        st.metric("Active Clients", "0", "0")
+        st.metric("Active Clients", "0")
     
     st.markdown('<div class="business-card">', unsafe_allow_html=True)
     st.markdown("##### Monthly Revenue")
@@ -1221,7 +1386,7 @@ elif st.session_state.current_page == "settings":
 
 st.markdown("""
     <div class="app-footer">
-        <p>© 2026 Invoice Pro - Professional Invoicing </p>
+        <p>© 2026 TT Invoice Pro - Professional Invoicing for Trinidad & Tobago</p>
         <p style="font-size: 0.75rem; margin-top: 0.5rem;">Version 2.0</p>
     </div>
 """, unsafe_allow_html=True)
