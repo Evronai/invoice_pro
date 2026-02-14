@@ -1,4 +1,4 @@
-# app.py (Complete final version with fully visible tabs)
+# app.py (Complete final version with colorful buttons)
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
@@ -95,7 +95,7 @@ FIXED_RATES = {
 }
 
 # ============================================================================
-# PROFESSIONAL CSS - COMPLETELY LIGHT TABS WITH DARK TEXT (NO BLACK TABS)
+# PROFESSIONAL CSS - WITH COLORFUL BUTTONS (NO BLACK)
 # ============================================================================
 
 st.markdown("""
@@ -158,7 +158,7 @@ st.markdown("""
         border-bottom: 1px solid #e2e8f0;
     }
     
-    /* TABS - ALL LIGHT WITH DARK TEXT (NO BLACK TABS) */
+    /* TABS - ALL LIGHT WITH DARK TEXT */
     .stTabs [data-baseweb="tab-list"] {
         gap: 0.5rem;
         background-color: #ffffff;
@@ -169,10 +169,10 @@ st.markdown("""
     }
     
     .stTabs [data-baseweb="tab"] {
-        color: #1e293b !important;  /* Dark text for ALL tabs */
+        color: #1e293b !important;
         font-weight: 500;
         font-size: 1rem;
-        background-color: #f1f5f9;  /* Light gray background for ALL tabs */
+        background-color: #f1f5f9;
         border-radius: 8px;
         padding: 0.5rem 1.2rem;
         transition: all 0.2s ease;
@@ -180,25 +180,17 @@ st.markdown("""
     }
     
     .stTabs [data-baseweb="tab"]:hover {
-        background-color: #e2e8f0;  /* Slightly darker on hover */
+        background-color: #e2e8f0;
         border-color: #cbd5e1;
     }
     
     .stTabs [aria-selected="true"] {
-        color: #ffffff !important;  /* White text for active tab only */
-        background-color: #1e40af !important;  /* Dark blue for active tab */
+        color: #ffffff !important;
+        background-color: #2563eb !important;  /* Bright blue for active tab */
         font-weight: 600;
-        border: 1px solid #1e3a8a;
+        border: 1px solid #1d4ed8;
     }
     
-    /* Tab content */
-    .stTabs [data-baseweb="tab-panel"] {
-        color: #1e293b !important;
-        background-color: transparent;
-        padding: 1rem 0;
-    }
-    
-    /* Force all text in inactive tabs to be dark */
     .stTabs [data-baseweb="tab"]:not([aria-selected="true"]) {
         color: #1e293b !important;
         background-color: #f1f5f9 !important;
@@ -206,6 +198,137 @@ st.markdown("""
     
     .stTabs [data-baseweb="tab"]:not([aria-selected="true"]):hover {
         background-color: #e2e8f0 !important;
+    }
+    
+    /* BUTTON STYLING - NO BLACK BUTTONS */
+    .stButton > button {
+        font-family: 'Inter', sans-serif;
+        font-weight: 500;
+        border-radius: 8px;
+        padding: 0.5rem 1rem;
+        transition: all 0.2s;
+        border: none;
+    }
+    
+    /* Secondary buttons - blue outline */
+    .stButton > button:not([kind="primary"]) {
+        background: white;
+        color: #2563eb !important;
+        border: 2px solid #2563eb;
+    }
+    
+    .stButton > button:not([kind="primary"]):hover {
+        background: #eff6ff;
+        border-color: #1d4ed8;
+        color: #1d4ed8 !important;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 6px rgba(37,99,235,0.1);
+    }
+    
+    /* Primary buttons - blue gradient */
+    .stButton > button[kind="primary"] {
+        background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
+        color: white !important;
+        border: none;
+        box-shadow: 0 2px 4px rgba(37,99,235,0.2);
+    }
+    
+    .stButton > button[kind="primary"]:hover {
+        background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%);
+        color: white !important;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 8px rgba(37,99,235,0.3);
+    }
+    
+    /* Danger/Remove buttons - red */
+    .stButton > button[key*="remove"] {
+        background: white;
+        color: #dc2626 !important;
+        border: 2px solid #dc2626;
+    }
+    
+    .stButton > button[key*="remove"]:hover {
+        background: #fee2e2;
+        border-color: #b91c1c;
+        color: #b91c1c !important;
+    }
+    
+    /* Success/Save buttons - green */
+    .stButton > button:has(span:contains("Save")),
+    .stButton > button:has(span:contains("Add")),
+    .stButton > button:has(span:contains("Update")) {
+        background: white;
+        color: #059669 !important;
+        border: 2px solid #059669;
+    }
+    
+    .stButton > button:has(span:contains("Save")):hover,
+    .stButton > button:has(span:contains("Add")):hover,
+    .stButton > button:has(span:contains("Update")):hover {
+        background: #d1fae5;
+        border-color: #047857;
+        color: #047857 !important;
+    }
+    
+    /* Action buttons in preview - colorful */
+    .stButton > button:has(span:contains("PDF")) {
+        background: white;
+        color: #7c3aed !important;
+        border: 2px solid #7c3aed;
+    }
+    
+    .stButton > button:has(span:contains("PDF")):hover {
+        background: #ede9fe;
+        border-color: #6d28d9;
+    }
+    
+    .stButton > button:has(span:contains("Email")) {
+        background: white;
+        color: #ea580c !important;
+        border: 2px solid #ea580c;
+    }
+    
+    .stButton > button:has(span:contains("Email")):hover {
+        background: #fff7ed;
+        border-color: #c2410c;
+    }
+    
+    .stButton > button:has(span:contains("New")),
+    .stButton > button:has(span:contains("Clear")) {
+        background: white;
+        color: #6b7280 !important;
+        border: 2px solid #6b7280;
+    }
+    
+    .stButton > button:has(span:contains("New")):hover,
+    .stButton > button:has(span:contains("Clear")):hover {
+        background: #f3f4f6;
+        border-color: #4b5563;
+    }
+    
+    /* Sidebar buttons */
+    section[data-testid="stSidebar"] .stButton > button {
+        background: white;
+        color: #2563eb !important;
+        border: 2px solid #2563eb;
+        text-align: left;
+        justify-content: flex-start;
+        margin-bottom: 0.25rem;
+    }
+    
+    section[data-testid="stSidebar"] .stButton > button:hover {
+        background: #eff6ff;
+        border-color: #1d4ed8;
+    }
+    
+    section[data-testid="stSidebar"] .stButton > button[kind="primary"] {
+        background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
+        color: white !important;
+        border: none;
+    }
+    
+    section[data-testid="stSidebar"] .stButton > button[kind="primary"]:hover {
+        background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%);
     }
     
     /* Logo styling */
@@ -260,36 +383,8 @@ st.markdown("""
     .stDateInput input:focus,
     .stSelectbox select:focus,
     .stTextArea textarea:focus {
-        border-color: #0f172a !important;
-        box-shadow: 0 0 0 2px rgba(15,23,42,0.1) !important;
-    }
-    
-    /* Button styling */
-    .stButton > button {
-        font-family: 'Inter', sans-serif;
-        font-weight: 500;
-        border-radius: 6px;
-        border: 1px solid #cbd5e1;
-        background: white;
-        color: #1e293b !important;
-        transition: all 0.2s;
-    }
-    
-    .stButton > button:hover {
-        border-color: #94a3b8;
-        background: #f8fafc;
-        color: #0f172a !important;
-    }
-    
-    .stButton > button[kind="primary"] {
-        background: #0f172a;
-        color: white !important;
-        border: none;
-    }
-    
-    .stButton > button[kind="primary"]:hover {
-        background: #1e293b;
-        color: white !important;
+        border-color: #2563eb !important;
+        box-shadow: 0 0 0 3px rgba(37,99,235,0.1) !important;
     }
     
     /* Metric containers */
@@ -351,16 +446,16 @@ st.markdown("""
     
     /* Alert messages */
     .stSuccess {
-        background-color: #dcfce7;
-        color: #166534 !important;
-        border: 1px solid #86efac;
+        background-color: #d1fae5;
+        color: #065f46 !important;
+        border: 1px solid #a7f3d0;
         border-radius: 6px;
     }
     
     .stWarning {
-        background-color: #fef9c3;
-        color: #854d0e !important;
-        border: 1px solid #fde047;
+        background-color: #fed7aa;
+        color: #92400e !important;
+        border: 1px solid #fdba74;
         border-radius: 6px;
     }
     
@@ -423,40 +518,6 @@ st.markdown("""
         text-align: right;
         color: #475569 !important;
         line-height: 1.5;
-    }
-    
-    /* Sidebar */
-    section[data-testid="stSidebar"] {
-        background-color: white;
-        border-right: 1px solid #e2e8f0;
-    }
-    
-    section[data-testid="stSidebar"] * {
-        color: #1e293b !important;
-    }
-    
-    section[data-testid="stSidebar"] .stButton > button {
-        background: white;
-        color: #1e293b !important;
-        border: 1px solid #e2e8f0;
-        text-align: left;
-        justify-content: flex-start;
-        margin-bottom: 0.25rem;
-    }
-    
-    section[data-testid="stSidebar"] .stButton > button:hover {
-        background: #f1f5f9;
-        border-color: #94a3b8;
-    }
-    
-    section[data-testid="stSidebar"] .stButton > button[kind="primary"] {
-        background: #0f172a;
-        color: white !important;
-        border: none;
-    }
-    
-    section[data-testid="stSidebar"] .stButton > button[kind="primary"]:hover {
-        background: #1e293b;
     }
     
     /* Footer */
@@ -931,7 +992,7 @@ if st.session_state.current_page == "create":
             if st.session_state.company_info.get('logo_base64'):
                 st.markdown('<div class="logo-preview">', unsafe_allow_html=True)
                 st.markdown(f'<div class="logo-container">{get_logo_html("80px", "200px")}</div>', unsafe_allow_html=True)
-                if st.button("Remove Logo", key="remove_logo_create"):
+                if st.button("🗑️ Remove Logo", key="remove_logo_create"):
                     remove_logo()
                     st.rerun()
                 st.markdown('</div>', unsafe_allow_html=True)
@@ -970,7 +1031,7 @@ if st.session_state.current_page == "create":
                 with col_discount:
                     discount = st.number_input("Discount %", min_value=0.0, max_value=100.0, value=0.0, step=5.0)
                 
-                if st.form_submit_button("Add Item", use_container_width=True):
+                if st.form_submit_button("➕ Add Item", use_container_width=True):
                     if description and unit_price > 0:
                         subtotal = quantity * unit_price
                         discount_amount = subtotal * (discount / 100)
@@ -1197,7 +1258,7 @@ if st.session_state.current_page == "create":
                             pdf_buffer = generate_pdf_invoice(invoice_data)
                             if pdf_buffer:
                                 b64 = base64.b64encode(pdf_buffer.getvalue()).decode()
-                                href = f'<a href="data:application/pdf;base64,{b64}" download="invoice_{invoice_number}.pdf" style="display: inline-block; padding: 0.5rem 1rem; background: #0f172a; color: white; text-decoration: none; border-radius: 6px; margin-top: 0.5rem;">Click to Download PDF</a>'
+                                href = f'<a href="data:application/pdf;base64,{b64}" download="invoice_{invoice_number}.pdf" style="display: inline-block; padding: 0.5rem 1rem; background: #2563eb; color: white; text-decoration: none; border-radius: 6px; margin-top: 0.5rem;">Click to Download PDF</a>'
                                 st.markdown(href, unsafe_allow_html=True)
                                 st.success("PDF generated successfully!")
                             else:
@@ -1207,7 +1268,7 @@ if st.session_state.current_page == "create":
                 
                 st.markdown("##### Email Invoice")
                 email_to = st.text_input("Send to", value=client_email if client_email else "")
-                if st.button("📧 Send", use_container_width=True):
+                if st.button("📧 Send Email", use_container_width=True):
                     if email_to:
                         st.info("Email functionality - configure SMTP settings")
                     else:
@@ -1241,7 +1302,7 @@ elif st.session_state.current_page == "clients":
                 address = st.text_area("Address")
                 company = st.text_input("Company")
                 
-                if st.form_submit_button("Add Client", use_container_width=True):
+                if st.form_submit_button("➕ Add Client", use_container_width=True):
                     if name and email:
                         try:
                             conn = sqlite3.connect('invoices.db')
