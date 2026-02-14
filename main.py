@@ -1,4 +1,4 @@
-# app.py (Fixed version - ALL issues resolved)
+# app.py (Fixed UI - No black backgrounds, proper preview rendering)
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
@@ -57,7 +57,7 @@ except ImportError:
 
 # Page configuration
 st.set_page_config(
-    page_title="TT Invoice Pro",
+    page_title="Invoice Pro",
     page_icon="💰",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -95,32 +95,93 @@ FIXED_RATES = {
 }
 
 # ============================================================================
-# PROFESSIONAL CSS - FIXED TEXT COLORS
+# SIMPLIFIED CSS - NO CONFLICTS
 # ============================================================================
 
 st.markdown("""
     <style>
-    /* Import professional fonts */
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-    
-    /* Global styles */
+    /* Reset any problematic styles */
     .stApp {
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
         background-color: #f8fafc;
     }
     
-    /* Force all text to be dark by default */
-    .stApp, .stApp * {
-        color: #1e293b !important;
+    /* Simple card styling */
+    .business-card {
+        background: white;
+        border-radius: 12px;
+        padding: 1.5rem;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        border: 1px solid #e2e8f0;
+        margin-bottom: 1.5rem;
+    }
+    
+    /* Section headers */
+    .section-header {
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: #0f172a;
+        margin-bottom: 1.25rem;
+        padding-bottom: 0.75rem;
+        border-bottom: 1px solid #e2e8f0;
+    }
+    
+    /* Button styling */
+    .stButton > button {
+        border-radius: 8px;
+        font-weight: 500;
+    }
+    
+    /* Invoice preview container - FIXED */
+    .invoice-preview-container {
+        background: white;
+        border-radius: 12px;
+        padding: 2rem;
+        border: 1px solid #e2e8f0;
+        margin: 1rem 0 2rem 0;
+    }
+    
+    /* Logo styling */
+    .logo-container {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        padding: 1rem;
+        background: #f8fafc;
+        border-radius: 8px;
+        border: 1px dashed #cbd5e1;
+        margin: 1rem 0;
+    }
+    
+    /* Grand total styling */
+    .grand-total-box {
+        background: #1e40af;
+        padding: 1rem;
+        border-radius: 8px;
+        margin-top: 1rem;
+    }
+    
+    .grand-total-box p {
+        color: white !important;
+        margin: 0;
+    }
+    
+    /* Ensure text is visible */
+    p, span, div, label {
+        color: #1e293b;
     }
     
     /* Headers */
     h1, h2, h3, h4, h5, h6 {
         color: #0f172a !important;
-        font-weight: 600;
     }
     
-    /* Header styling */
+    /* Sidebar */
+    section[data-testid="stSidebar"] {
+        background-color: white;
+        border-right: 1px solid #e2e8f0;
+    }
+    
+    /* App header */
     .app-header {
         background: white;
         padding: 1.5rem 2rem;
@@ -141,498 +202,26 @@ st.markdown("""
         margin-top: 0.25rem;
     }
     
-    /* Card styling */
-    .business-card {
-        background: white;
-        border-radius: 12px;
-        padding: 1.5rem;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-        border: 1px solid #e2e8f0;
-        margin-bottom: 1.5rem;
-    }
-    
-    .business-card * {
-        color: #1e293b !important;
-    }
-    
-    /* Section headers */
-    .section-header {
-        font-size: 1.1rem;
-        font-weight: 600;
-        color: #0f172a !important;
-        margin-bottom: 1.25rem;
-        padding-bottom: 0.75rem;
-        border-bottom: 1px solid #e2e8f0;
-    }
-    
-    /* TABS */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 0.5rem;
-        background-color: #ffffff;
-        padding: 0.5rem;
-        border-radius: 10px;
-        border: 1px solid #e2e8f0;
-        margin-bottom: 1.5rem;
-    }
-    
-    .stTabs [data-baseweb="tab"] {
-        font-weight: 500;
-        font-size: 1rem;
-        background-color: #f1f5f9;
-        border-radius: 8px;
-        padding: 0.5rem 1.2rem;
-        transition: all 0.2s ease;
-        border: 1px solid transparent;
-    }
-    
-    .stTabs [data-baseweb="tab"]:not([aria-selected="true"]) {
-        color: #1e293b !important;
-        background-color: #f1f5f9 !important;
-    }
-    
-    .stTabs [aria-selected="true"] {
-        color: #ffffff !important;
-        background-color: #2563eb !important;
-        font-weight: 600;
-        border: 1px solid #1d4ed8;
-    }
-    
-    .stTabs [aria-selected="true"] * {
-        color: #ffffff !important;
-    }
-    
-    /* BUTTON STYLING */
-    .stButton > button {
-        font-family: 'Inter', sans-serif;
-        font-weight: 500;
-        border-radius: 8px;
-        padding: 0.5rem 1rem;
-        transition: all 0.2s;
-        border: none;
-    }
-    
-    /* Secondary buttons */
-    .stButton > button:not([kind="primary"]) {
-        background: white;
-        color: #2563eb !important;
-        border: 2px solid #2563eb;
-    }
-    
-    /* Primary buttons */
-    .stButton > button[kind="primary"] {
-        background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
-        color: white !important;
-        border: none;
-        box-shadow: 0 2px 4px rgba(37,99,235,0.2);
-    }
-    
-    .stButton > button[kind="primary"] * {
-        color: white !important;
-    }
-    
-    /* Danger/Remove buttons */
-    .stButton > button[key*="remove"],
-    .stButton > button[key*="del"] {
-        background: white;
-        color: #dc2626 !important;
-        border: 2px solid #dc2626;
-        padding: 0.25rem 0.5rem;
-        font-size: 0.9rem;
-    }
-    
-    /* Edit buttons */
-    .stButton > button[key*="edit"] {
-        background: white;
-        color: #ea580c !important;
-        border: 2px solid #ea580c;
-        padding: 0.25rem 0.5rem;
-        font-size: 0.9rem;
-    }
-    
-    /* Success buttons */
-    .stButton > button:has(span:contains("Save")),
-    .stButton > button:has(span:contains("Add")),
-    .stButton > button:has(span:contains("Update")),
-    .stButton > button:has(span:contains("Recalculate")) {
-        background: white;
-        color: #059669 !important;
-        border: 2px solid #059669;
-    }
-    
-    /* PDF button */
-    .stButton > button:has(span:contains("PDF")) {
-        background: white;
-        color: #7c3aed !important;
-        border: 2px solid #7c3aed;
-    }
-    
-    /* Email button */
-    .stButton > button:has(span:contains("Email")) {
-        background: white;
-        color: #ea580c !important;
-        border: 2px solid #ea580c;
-    }
-    
-    /* New Invoice button */
-    .stButton > button:has(span:contains("New")) {
-        background: white;
-        color: #6b7280 !important;
-        border: 2px solid #6b7280;
-    }
-    
-    /* Sidebar buttons */
-    section[data-testid="stSidebar"] .stButton > button {
-        background: white;
-        color: #2563eb !important;
-        border: 2px solid #2563eb;
-        text-align: left;
-        justify-content: flex-start;
-        margin-bottom: 0.25rem;
-    }
-    
-    section[data-testid="stSidebar"] .stButton > button[kind="primary"] {
-        background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
-        color: white !important;
-        border: none;
-    }
-    
-    section[data-testid="stSidebar"] .stButton > button[kind="primary"] * {
-        color: white !important;
-    }
-    
-    /* Logo styling */
-    .logo-container {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        margin-bottom: 1rem;
-        padding: 1rem;
-        background: #f8fafc;
-        border-radius: 8px;
-        border: 1px dashed #cbd5e1;
-    }
-    
-    .logo-preview {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        margin: 1rem 0;
-    }
-    
-    .invoice-logo {
-        max-height: 60px;
-        max-width: 150px;
-        object-fit: contain;
-    }
-    
-    /* Form labels */
-    .stTextInput label,
-    .stNumberInput label,
-    .stDateInput label,
-    .stSelectbox label,
-    .stTextArea label,
-    .stCheckbox label,
-    .stRadio label,
-    .stFileUploader label {
-        color: #1e293b !important;
-        font-weight: 500 !important;
-        font-size: 0.9rem !important;
-        margin-bottom: 0.25rem !important;
-    }
-    
-    /* Input fields */
-    .stTextInput input,
-    .stNumberInput input,
-    .stDateInput input,
-    .stSelectbox select,
-    .stTextArea textarea {
-        color: #1e293b !important;
-        background-color: white !important;
-        border: 1px solid #cbd5e1 !important;
-        border-radius: 6px;
-        padding: 0.5rem !important;
-    }
-    
-    /* Metric containers */
-    div[data-testid="metric-container"] {
-        background: white;
-        border: 1px solid #e2e8f0;
-        border-radius: 8px;
-        padding: 1rem;
-    }
-    
-    div[data-testid="metric-container"] label {
-        color: #475569 !important;
-    }
-    
-    div[data-testid="metric-container"] div {
-        color: #0f172a !important;
-    }
-    
-    /* DataFrame/Table styling */
-    .stDataFrame {
-        color: #1e293b !important;
-    }
-    
-    .dataframe th {
-        background-color: #f1f5f9;
-        color: #0f172a !important;
-        font-weight: 600;
-        padding: 0.75rem;
-    }
-    
-    .dataframe td {
-        color: #1e293b !important;
-        padding: 0.75rem;
-        border-bottom: 1px solid #e2e8f0;
-    }
-    
-    /* Expanders */
-    .streamlit-expanderHeader {
-        color: #1e293b !important;
-        background-color: #f8fafc;
-        border-radius: 6px;
-        font-weight: 500;
-        padding: 0.5rem 1rem;
-        border: 1px solid #e2e8f0;
-    }
-    
-    .streamlit-expanderContent {
-        color: #1e293b !important;
-        background-color: white;
-        border: 1px solid #e2e8f0;
-        border-top: none;
-        border-radius: 0 0 6px 6px;
-        padding: 1rem;
-    }
-    
-    .streamlit-expanderContent * {
-        color: #1e293b !important;
-    }
-    
-    /* Alert messages */
-    .stSuccess {
-        background-color: #d1fae5;
-        color: #065f46 !important;
-        border: 1px solid #a7f3d0;
-        border-radius: 6px;
-    }
-    
-    .stSuccess * {
-        color: #065f46 !important;
-    }
-    
-    .stWarning {
-        background-color: #fed7aa;
-        color: #92400e !important;
-        border: 1px solid #fdba74;
-        border-radius: 6px;
-    }
-    
-    .stWarning * {
-        color: #92400e !important;
-    }
-    
-    .stError {
-        background-color: #fee2e2;
-        color: #991b1b !important;
-        border: 1px solid #fecaca;
-        border-radius: 6px;
-    }
-    
-    .stError * {
-        color: #991b1b !important;
-    }
-    
-    .stInfo {
-        background-color: #dbeafe;
-        color: #1e40af !important;
-        border: 1px solid #bfdbfe;
-        border-radius: 6px;
-    }
-    
-    .stInfo * {
-        color: #1e40af !important;
-    }
-    
-    /* Invoice preview - FIXED BLACK BACKGROUND ISSUE */
-    .invoice-preview {
-        background: white !important;
-        border-radius: 12px;
-        padding: 2rem;
-        border: 1px solid #e2e8f0;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.02);
-        margin-top: 1rem;
-        margin-bottom: 2rem;
-    }
-    
-    .invoice-preview * {
-        color: #1e293b !important;
-    }
-    
-    .invoice-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 2rem;
-        padding-bottom: 1rem;
-        border-bottom: 2px solid #e2e8f0;
-    }
-    
-    .invoice-header-left {
-        display: flex;
-        align-items: center;
-        gap: 1rem;
-    }
-    
-    .invoice-title {
-        font-size: 2rem;
-        font-weight: 600;
-        color: #0f172a !important;
-        letter-spacing: -0.02em;
-    }
-    
-    .company-details {
-        text-align: right;
-        color: #475569 !important;
-        line-height: 1.5;
-    }
-    
-    .company-details * {
-        color: #475569 !important;
-    }
-    
-    /* Preview table - FIXED TEXT COLOR */
-    .preview-table {
-        width: 100%;
-        border-collapse: collapse;
-        margin: 1rem 0;
-        background: white;
-    }
-    
-    .preview-table th {
-        background: #f8fafc;
-        padding: 0.75rem;
-        text-align: left;
-        border-bottom: 2px solid #e2e8f0;
-        font-weight: 600;
-        color: #0f172a !important;
-    }
-    
-    .preview-table td {
-        padding: 0.75rem;
-        border-bottom: 1px solid #e2e8f0;
-        color: #1e293b !important;
-    }
-    
-    .preview-table .amount {
-        text-align: right;
-    }
-    
-    /* Totals table */
-    .totals-table {
-        width: 300px;
-        margin-left: auto;
-        background: white;
-    }
-    
-    .totals-table td {
-        padding: 0.25rem 0.5rem;
-        color: #1e293b !important;
-    }
-    
-    .totals-table .total-row {
-        border-top: 2px solid #e2e8f0;
-        font-weight: 600;
-        font-size: 1.1rem;
-    }
-    
-    /* Grand total highlight */
-    .grand-total {
-        background: #1e40af !important;
-        padding: 1rem;
-        border-radius: 8px;
-        margin-top: 1rem;
-    }
-    
-    .grand-total p {
-        color: white !important;
-    }
-    
-    .grand-total p:first-child {
-        color: #e2e8f0 !important;
-    }
-    
-    .grand-total p:last-child {
-        color: white !important;
-    }
-    
-    /* Items list - FIXED INVISIBLE TEXT */
-    div[data-testid="column"] {
-        color: #1e293b !important;
-    }
-    
-    div[data-testid="column"] * {
-        color: #1e293b !important;
-    }
-    
-    /* Ensure all text in columns is visible */
-    .stMarkdown, .stMarkdown * {
-        color: #1e293b !important;
-    }
-    
-    /* Sidebar */
-    section[data-testid="stSidebar"] {
-        background-color: white;
-        border-right: 1px solid #e2e8f0;
-    }
-    
-    section[data-testid="stSidebar"] * {
-        color: #1e293b !important;
-    }
-    
     /* Footer */
     .app-footer {
         text-align: center;
         padding: 2rem;
-        color: #64748b !important;
+        color: #64748b;
         font-size: 0.85rem;
         border-top: 1px solid #e2e8f0;
         margin-top: 3rem;
         background: white;
     }
     
-    .app-footer p {
-        color: #64748b !important;
-    }
-    
-    /* File uploader */
-    .stFileUploader > div {
-        border: 1px dashed #cbd5e1;
-        border-radius: 6px;
-        padding: 1rem;
-        background: #f8fafc;
-    }
-    
-    .stFileUploader > div * {
-        color: #1e293b !important;
-    }
-    
-    /* Download links */
-    a {
-        color: #2563eb !important;
-        text-decoration: none;
-        font-weight: 500;
-    }
-    
-    a:hover {
-        text-decoration: underline;
+    /* Hide any code blocks that might appear */
+    pre, code {
+        display: none !important;
     }
     </style>
 """, unsafe_allow_html=True)
 
 # ============================================================================
-# FIXED PDF GENERATION FUNCTIONS - WITH LOGO AND PROPER ALIGNMENT
+# FIXED PDF GENERATION FUNCTIONS
 # ============================================================================
 
 def generate_pdf_invoice(invoice_data):
@@ -676,27 +265,10 @@ def generate_pdf_invoice(invoice_data):
         # Get company info
         company = invoice_data.get('company_info', {})
         
-        # Create header with logo if available
-        header_data = []
-        
-        # Check if logo bytes are available
-        logo_bytes = company.get('logo_bytes')
-        if logo_bytes:
-            try:
-                # Create temporary file for logo
-                logo_buffer = io.BytesIO(logo_bytes)
-                img = RLImage(logo_buffer, width=1.5*inch, height=0.75*inch)
-                header_data.append([img, Paragraph("<b>INVOICE</b>", title_style)])
-            except Exception as e:
-                logger.error(f"Logo processing error: {e}")
-                header_data.append([Paragraph(f"<b>{company.get('name', '')}</b>", normal_style), 
-                                   Paragraph("<b>INVOICE</b>", title_style)])
-        else:
-            header_data.append([Paragraph(f"<b>{company.get('name', '')}</b>", normal_style), 
-                               Paragraph("<b>INVOICE</b>", title_style)])
-        
-        # Add company details
-        header_data.extend([
+        # Create header
+        header_data = [
+            [Paragraph(f"<b>{company.get('name', '')}</b>", normal_style),
+             Paragraph("<b>INVOICE</b>", title_style)],
             [Paragraph(company.get('address', ''), normal_style),
              Paragraph(f"<b>#{invoice_data.get('invoice_number', '')}</b>", right_style)],
             [Paragraph(company.get('city', ''), normal_style),
@@ -705,7 +277,7 @@ def generate_pdf_invoice(invoice_data):
              Paragraph(f"Due: {invoice_data.get('due_date', '')}", right_style)],
             [Paragraph(f"Email: {company.get('email', '')}", normal_style),
              Paragraph(f"PO: {invoice_data.get('po_number', 'N/A')}", right_style)]
-        ])
+        ]
         
         header_table = Table(header_data, colWidths=[3.5*inch, 3.5*inch])
         header_table.setStyle(TableStyle([
@@ -730,9 +302,9 @@ def generate_pdf_invoice(invoice_data):
         story.append(Paragraph(client_text, normal_style))
         story.append(Spacer(1, 20))
         
-        # Items table - FIXED ALIGNMENT
+        # Items table
         if 'items' in invoice_data and invoice_data['items']:
-            # Prepare table data with proper headers
+            # Prepare table data
             table_data = [
                 ['Description', 'Qty', 'Unit Price', 'Tax %', 'Disc %', 'Total']
             ]
@@ -740,9 +312,7 @@ def generate_pdf_invoice(invoice_data):
             currency = invoice_data.get('currency', 'TTD')
             symbol = get_currency_symbol(currency)
             
-            # Add items
             for item in invoice_data['items']:
-                # Wrap description if too long
                 desc = item.get('description', '')
                 if len(desc) > 30:
                     desc = desc[:27] + '...'
@@ -756,45 +326,37 @@ def generate_pdf_invoice(invoice_data):
                     f"{symbol}{item.get('total', 0):,.2f}"
                 ])
             
-            # Create table with proper column widths
+            # Create table
             col_widths = [2.5*inch, 0.4*inch, 0.8*inch, 0.5*inch, 0.5*inch, 1*inch]
             table = Table(table_data, colWidths=col_widths, repeatRows=1)
             
-            # Table styling
             table.setStyle(TableStyle([
-                # Header
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2563eb')),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
                 ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
                 ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
                 ('FONTSIZE', (0, 0), (-1, 0), 10),
                 ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
-                
-                # Body
                 ('BACKGROUND', (0, 1), (-1, -1), colors.white),
                 ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#1e293b')),
-                ('ALIGN', (1, 1), (1, -1), 'CENTER'),  # Qty centered
-                ('ALIGN', (2, 1), (5, -1), 'RIGHT'),   # Amounts right-aligned
+                ('ALIGN', (1, 1), (1, -1), 'CENTER'),
+                ('ALIGN', (2, 1), (5, -1), 'RIGHT'),
                 ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
                 ('FONTSIZE', (0, 1), (-1, -1), 9),
                 ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#e2e8f0')),
-                ('BOX', (0, 0), (-1, -1), 2, colors.HexColor('#2563eb')),
-                
-                # First column (description) left-aligned
                 ('ALIGN', (0, 1), (0, -1), 'LEFT'),
             ]))
             
             story.append(table)
             story.append(Spacer(1, 20))
             
-            # Totals section
+            # Totals
             totals = invoice_data.get('totals', {})
             subtotal = totals.get('subtotal', 0)
             discount = totals.get('discount', 0)
             tax = totals.get('tax', 0)
             grand_total = totals.get('grand_total', 0)
             
-            # Create totals table
             totals_data = [
                 ['Subtotal:', f"{symbol}{subtotal:,.2f}"],
                 ['Discount:', f"-{symbol}{discount:,.2f}"],
@@ -810,11 +372,8 @@ def generate_pdf_invoice(invoice_data):
                 ('FONTSIZE', (0, -1), (1, -1), 12),
                 ('LINEABOVE', (0, -1), (1, -1), 2, colors.HexColor('#2563eb')),
                 ('BACKGROUND', (0, -1), (1, -1), colors.HexColor('#f0f9ff')),
-                ('TEXTCOLOR', (0, -1), (1, -1), colors.HexColor('#0f172a')),
-                ('TEXTCOLOR', (0, 0), (1, -2), colors.HexColor('#1e293b')),
             ]))
             
-            # Add totals table aligned to right
             story.append(Table([[totals_table]], colWidths=[7*inch]))
             story.append(Spacer(1, 20))
         
@@ -834,7 +393,6 @@ def generate_pdf_invoice(invoice_data):
         )
         story.append(Paragraph("Thank you for your business!", footer_style))
         
-        # Build PDF
         doc.build(story)
         buffer.seek(0)
         return buffer
@@ -853,7 +411,6 @@ def init_database():
         conn = sqlite3.connect('invoices.db')
         c = conn.cursor()
         
-        # Create tables
         c.execute('''CREATE TABLE IF NOT EXISTS invoices
                      (id INTEGER PRIMARY KEY AUTOINCREMENT,
                       invoice_number TEXT UNIQUE,
@@ -892,13 +449,9 @@ def init_database():
 def save_logo(uploaded_file):
     """Save uploaded logo to session state"""
     if uploaded_file is not None:
-        # Read the file
         bytes_data = uploaded_file.getvalue()
-        
-        # Convert to base64 for display
         encoded = base64.b64encode(bytes_data).decode()
         
-        # Store in session state
         st.session_state.company_info['logo_bytes'] = bytes_data
         st.session_state.company_info['logo_base64'] = encoded
         st.session_state.company_info['logo_filename'] = uploaded_file.name
@@ -911,19 +464,15 @@ def get_logo_html(max_height="60px", max_width="150px"):
     """Get HTML for logo display"""
     if st.session_state.company_info.get('logo_base64'):
         mime = st.session_state.company_info.get('logo_mime', 'image/png')
-        return f'<img src="data:{mime};base64,{st.session_state.company_info["logo_base64"]}" style="max-height: {max_height}; max-width: {max_width}; object-fit: contain;" class="invoice-logo">'
+        return f'<img src="data:{mime};base64,{st.session_state.company_info["logo_base64"]}" style="max-height: {max_height}; max-width: {max_width}; object-fit: contain;">'
     return ""
 
 def remove_logo():
     """Remove logo from session state"""
-    if 'logo_bytes' in st.session_state.company_info:
-        del st.session_state.company_info['logo_bytes']
-    if 'logo_base64' in st.session_state.company_info:
-        del st.session_state.company_info['logo_base64']
-    if 'logo_filename' in st.session_state.company_info:
-        del st.session_state.company_info['logo_filename']
-    if 'logo_mime' in st.session_state.company_info:
-        del st.session_state.company_info['logo_mime']
+    keys = ['logo_bytes', 'logo_base64', 'logo_filename', 'logo_mime']
+    for key in keys:
+        if key in st.session_state.company_info:
+            del st.session_state.company_info[key]
 
 # ============================================================================
 # HELPER FUNCTIONS
@@ -945,7 +494,6 @@ def format_amount(amount, currency='TTD'):
 def init_session_state():
     """Initialize all session state variables with safe defaults"""
     
-    # Company info with all required fields
     company_info = {
         'name': 'Your Business Name',
         'address': '123 Business Street',
@@ -964,7 +512,7 @@ def init_session_state():
         'database_initialized': False,
         'current_page': 'create',
         'clients': [],
-        'edit_index': -1  # For item editing
+        'edit_index': -1
     }
     
     for key, value in defaults.items():
@@ -984,8 +532,8 @@ st.markdown("""
                 <h1 class="app-title">TT INVOICE PRO</h1>
                 <div class="app-subtitle">Professional invoicing for Caribbean businesses</div>
             </div>
-            <div style="background: #f1f5f9; padding: 0.5rem 1rem; border-radius: 6px; color: #0f172a; font-weight: 500;">
-                <span style="color: #0f172a;">TT$</span> <span style="color: #0f172a;">Trinidad & Tobago Dollar</span>
+            <div style="background: #f1f5f9; padding: 0.5rem 1rem; border-radius: 6px; font-weight: 500;">
+                Trinidad & Tobago Dollar
             </div>
         </div>
     </div>
@@ -1018,7 +566,6 @@ with st.sidebar:
     st.markdown("### Currency Settings")
     currency_options = list(CURRENCIES.keys())
     
-    # Find index safely
     try:
         current_idx = currency_options.index(st.session_state.currency)
     except ValueError:
@@ -1042,8 +589,6 @@ with st.sidebar:
     st.markdown("### Quick Stats")
     col1, col2 = st.columns(2)
     with col1:
-        st.metric("Invoices", str(len(st.session_state.invoice_items)), "0")
-    with col2:
         st.metric("Items", str(len(st.session_state.invoice_items)), "0")
 
 # ============================================================================
@@ -1064,6 +609,7 @@ if st.session_state.current_page == "create":
     col1, col2 = st.columns([1, 1])
     
     with col1:
+        # Invoice Details Card
         with st.container():
             st.markdown('<div class="business-card">', unsafe_allow_html=True)
             st.markdown('<div class="section-header">📋 Invoice Details</div>', unsafe_allow_html=True)
@@ -1080,6 +626,7 @@ if st.session_state.current_page == "create":
             
             st.markdown('</div>', unsafe_allow_html=True)
         
+        # Client Information Card
         with st.container():
             st.markdown('<div class="business-card">', unsafe_allow_html=True)
             st.markdown('<div class="section-header">👤 Client Information</div>', unsafe_allow_html=True)
@@ -1091,7 +638,7 @@ if st.session_state.current_page == "create":
             
             st.markdown('</div>', unsafe_allow_html=True)
         
-        # Company info (collapsible)
+        # Company Info Expander
         with st.expander("🏢 Company Information"):
             company_name = st.text_input("Company Name", value=st.session_state.company_info['name'])
             company_address = st.text_input("Address", value=st.session_state.company_info['address'])
@@ -1106,7 +653,6 @@ if st.session_state.current_page == "create":
             logo_file = st.file_uploader(
                 "Upload Logo (PNG, JPG, JPEG)",
                 type=['png', 'jpg', 'jpeg'],
-                help="Recommended size: 200x100 pixels",
                 key="create_logo_upload"
             )
             
@@ -1114,11 +660,9 @@ if st.session_state.current_page == "create":
                 if save_logo(logo_file):
                     st.success(f"Logo uploaded: {logo_file.name}")
             
-            # Show current logo if exists
+            # Show current logo
             if st.session_state.company_info.get('logo_base64'):
-                st.markdown('<div class="logo-preview">', unsafe_allow_html=True)
                 st.markdown(f'<div class="logo-container">{get_logo_html("80px", "200px")}</div>', unsafe_allow_html=True)
-                st.markdown('</div>', unsafe_allow_html=True)
                 if st.button("🗑️ Remove Logo", key="remove_logo_create"):
                     remove_logo()
                     st.rerun()
@@ -1136,13 +680,13 @@ if st.session_state.current_page == "create":
                 st.success("Company information updated")
     
     with col2:
+        # Invoice Items Card
         with st.container():
             st.markdown('<div class="business-card">', unsafe_allow_html=True)
             st.markdown('<div class="section-header">📦 Invoice Items</div>', unsafe_allow_html=True)
             
-            # Item entry/Edit form
+            # Item Entry Form
             with st.form("item_form", clear_on_submit=True):
-                # Check if we're editing an existing item
                 editing = st.session_state.edit_index >= 0 and st.session_state.edit_index < len(st.session_state.invoice_items)
                 
                 if editing:
@@ -1176,28 +720,17 @@ if st.session_state.current_page == "create":
                 with col_discount:
                     discount = st.number_input("Discount %", min_value=0.0, max_value=100.0, value=default_discount, step=0.5, format="%.1f")
                 
-                # Calculate live preview of item total
-                if description and unit_price > 0:
-                    subtotal = quantity * unit_price
-                    discount_amount = subtotal * (discount / 100)
-                    taxable_amount = subtotal - discount_amount
-                    tax_amount = taxable_amount * (tax_rate / 100)
-                    item_total = taxable_amount + tax_amount
-                    st.info(f"📊 Item Total: {format_amount(item_total, st.session_state.currency)}")
-                
                 col1, col2 = st.columns(2)
                 with col1:
                     if editing:
                         if st.form_submit_button("✅ Update Item", use_container_width=True):
                             if description and unit_price > 0:
-                                # Calculate amounts
                                 subtotal = quantity * unit_price
                                 discount_amount = subtotal * (discount / 100)
                                 taxable_amount = subtotal - discount_amount
                                 tax_amount = taxable_amount * (tax_rate / 100)
                                 total = taxable_amount + tax_amount
                                 
-                                # Update the item
                                 st.session_state.invoice_items[st.session_state.edit_index] = {
                                     'description': description,
                                     'quantity': quantity,
@@ -1209,13 +742,11 @@ if st.session_state.current_page == "create":
                                     'tax_amount': tax_amount,
                                     'total': total
                                 }
-                                # Reset edit mode
                                 st.session_state.edit_index = -1
                                 st.rerun()
                     else:
                         if st.form_submit_button("➕ Add Item", use_container_width=True):
                             if description and unit_price > 0:
-                                # Calculate amounts
                                 subtotal = quantity * unit_price
                                 discount_amount = subtotal * (discount / 100)
                                 taxable_amount = subtotal - discount_amount
@@ -1241,51 +772,41 @@ if st.session_state.current_page == "create":
                             st.session_state.edit_index = -1
                             st.rerun()
             
-            # Display items with edit/delete options - FIXED VISIBILITY
+            # Display Items
             if st.session_state.invoice_items:
                 st.markdown("##### Current Items")
                 
-                # Create headers
-                col_desc, col_qty, col_price, col_tax, col_disc, col_total, col_actions = st.columns([3, 1, 1, 1, 1, 1, 1])
-                with col_desc:
-                    st.markdown("**Description**")
-                with col_qty:
-                    st.markdown("**Qty**")
-                with col_price:
-                    st.markdown("**Price**")
-                with col_tax:
-                    st.markdown("**Tax**")
-                with col_disc:
-                    st.markdown("**Disc**")
-                with col_total:
-                    st.markdown("**Total**")
-                with col_actions:
-                    st.markdown("**Actions**")
+                # Headers
+                cols = st.columns([3, 1, 1, 1, 1, 1, 1])
+                headers = ["Description", "Qty", "Price", "Tax", "Disc", "Total", "Actions"]
+                for col, header in zip(cols, headers):
+                    with col:
+                        st.markdown(f"**{header}**")
                 
-                # Display each item
+                # Items
                 for idx, item in enumerate(st.session_state.invoice_items):
-                    col_desc, col_qty, col_price, col_tax, col_disc, col_total, col_actions = st.columns([3, 1, 1, 1, 1, 1, 1])
+                    cols = st.columns([3, 1, 1, 1, 1, 1, 1])
                     
-                    with col_desc:
+                    with cols[0]:
                         st.write(item['description'])
-                    with col_qty:
+                    with cols[1]:
                         st.write(str(item['quantity']))
-                    with col_price:
+                    with cols[2]:
                         st.write(format_amount(item['unit_price'], st.session_state.currency))
-                    with col_tax:
+                    with cols[3]:
                         st.write(f"{item['tax_rate']}%")
-                    with col_disc:
+                    with cols[4]:
                         st.write(f"{item['discount']}%")
-                    with col_total:
+                    with cols[5]:
                         st.write(f"**{format_amount(item['total'], st.session_state.currency)}**")
-                    with col_actions:
+                    with cols[6]:
                         col_edit, col_del = st.columns(2)
                         with col_edit:
-                            if st.button("✏️", key=f"edit_{idx}", help="Edit item"):
+                            if st.button("✏️", key=f"edit_{idx}"):
                                 st.session_state.edit_index = idx
                                 st.rerun()
                         with col_del:
-                            if st.button("🗑️", key=f"del_{idx}", help="Delete item"):
+                            if st.button("🗑️", key=f"del_{idx}"):
                                 st.session_state.invoice_items.pop(idx)
                                 if st.session_state.edit_index == idx:
                                     st.session_state.edit_index = -1
@@ -1293,47 +814,24 @@ if st.session_state.current_page == "create":
                 
                 st.divider()
                 
-                # Calculate and display GRAND TOTAL
+                # Calculate totals
                 subtotal = sum(item['subtotal'] for item in st.session_state.invoice_items)
                 total_discount = sum(item['discount_amount'] for item in st.session_state.invoice_items)
                 total_tax = sum(item['tax_amount'] for item in st.session_state.invoice_items)
                 grand_total = sum(item['total'] for item in st.session_state.invoice_items)
                 
-                # Display totals
+                # Summary
                 st.markdown("### 📊 Invoice Summary")
                 
                 col1, col2 = st.columns(2)
                 with col1:
-                    st.markdown(f"""
-                    <div style="background: #f8fafc; padding: 1rem; border-radius: 8px; border: 1px solid #e2e8f0;">
-                        <p style="margin: 0; color: #475569;">Subtotal:</p>
-                        <p style="font-size: 1.2rem; font-weight: 600; margin: 0; color: #0f172a;">{format_amount(subtotal, st.session_state.currency)}</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    st.markdown(f"""
-                    <div style="background: #f8fafc; padding: 1rem; border-radius: 8px; border: 1px solid #e2e8f0; margin-top: 0.5rem;">
-                        <p style="margin: 0; color: #475569;">Discount:</p>
-                        <p style="font-size: 1.2rem; font-weight: 600; margin: 0; color: #dc2626;">-{format_amount(total_discount, st.session_state.currency)}</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-                
+                    st.info(f"**Subtotal:** {format_amount(subtotal, st.session_state.currency)}")
+                    st.info(f"**Discount:** -{format_amount(total_discount, st.session_state.currency)}")
                 with col2:
-                    st.markdown(f"""
-                    <div style="background: #f8fafc; padding: 1rem; border-radius: 8px; border: 1px solid #e2e8f0;">
-                        <p style="margin: 0; color: #475569;">Tax:</p>
-                        <p style="font-size: 1.2rem; font-weight: 600; margin: 0; color: #0f172a;">{format_amount(total_tax, st.session_state.currency)}</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    st.markdown(f"""
-                    <div class="grand-total">
-                        <p style="margin: 0; color: #e2e8f0; font-weight: 500;">GRAND TOTAL:</p>
-                        <p style="font-size: 1.8rem; font-weight: 700; margin: 0; color: white;">{format_amount(grand_total, st.session_state.currency)}</p>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    st.info(f"**Tax:** {format_amount(total_tax, st.session_state.currency)}")
+                    st.markdown(f'<div class="grand-total-box"><p style="font-size: 1.5rem; font-weight: 700;">GRAND TOTAL: {format_amount(grand_total, st.session_state.currency)}</p></div>', unsafe_allow_html=True)
                 
-                # Quick actions
+                # Actions
                 col_reset, col_update = st.columns(2)
                 with col_reset:
                     if st.button("🔄 Reset All Items", use_container_width=True):
@@ -1342,217 +840,171 @@ if st.session_state.current_page == "create":
                         st.rerun()
                 with col_update:
                     if st.button("📊 Recalculate All", use_container_width=True):
-                        # Recalculate all items
-                        updated_items = []
-                        for item in st.session_state.invoice_items:
-                            subtotal = item['quantity'] * item['unit_price']
-                            discount_amount = subtotal * (item['discount'] / 100)
-                            taxable_amount = subtotal - discount_amount
-                            tax_amount = taxable_amount * (item['tax_rate'] / 100)
-                            total = taxable_amount + tax_amount
-                            
-                            item['subtotal'] = subtotal
-                            item['discount_amount'] = discount_amount
-                            item['tax_amount'] = tax_amount
-                            item['total'] = total
-                            updated_items.append(item)
-                        
-                        st.session_state.invoice_items = updated_items
-                        st.success("✅ All items recalculated!")
                         st.rerun()
             else:
                 st.info("No items added yet. Use the form above to add items.")
             
             st.markdown('</div>', unsafe_allow_html=True)
     
-    # Preview section - FIXED VISIBILITY
+    # Preview Section - FIXED: Using st.markdown with proper container
     if st.session_state.invoice_items and client_name:
         st.markdown('<div class="section-header">👁️ Invoice Preview</div>', unsafe_allow_html=True)
         
-        preview_col1, preview_col2 = st.columns([2, 1])
+        # Calculate totals
+        subtotal = sum(item['subtotal'] for item in st.session_state.invoice_items)
+        total_discount = sum(item['discount_amount'] for item in st.session_state.invoice_items)
+        total_tax = sum(item['tax_amount'] for item in st.session_state.invoice_items)
+        grand_total = sum(item['total'] for item in st.session_state.invoice_items)
         
-        with preview_col1:
-            # Get logo HTML
-            logo_html = get_logo_html("60px", "150px")
+        # Create a clean preview using Streamlit components instead of raw HTML
+        with st.container():
+            st.markdown('<div class="invoice-preview-container">', unsafe_allow_html=True)
             
-            # Calculate totals for preview
-            subtotal = sum(item['subtotal'] for item in st.session_state.invoice_items)
-            total_discount = sum(item['discount_amount'] for item in st.session_state.invoice_items)
-            total_tax = sum(item['tax_amount'] for item in st.session_state.invoice_items)
-            grand_total = sum(item['total'] for item in st.session_state.invoice_items)
+            # Header with columns
+            col_left, col_right = st.columns(2)
+            with col_left:
+                if st.session_state.company_info.get('logo_base64'):
+                    st.image(io.BytesIO(st.session_state.company_info['logo_bytes']), width=150)
+                st.markdown(f"### INVOICE\n{invoice_number}")
+            with col_right:
+                st.markdown(f"""
+                **{st.session_state.company_info['name']}**  
+                {st.session_state.company_info['address']}  
+                {st.session_state.company_info['city']}  
+                {st.session_state.company_info['phone']}
+                """)
             
-            # Build preview HTML
-            preview_html = f'''
-            <div class="invoice-preview">
-                <div class="invoice-header">
-                    <div class="invoice-header-left">
-                        {logo_html if logo_html else ''}
-                        <div>
-                            <div class="invoice-title">INVOICE</div>
-                            <div style="color: #475569; margin-top: 0.5rem;">{invoice_number}</div>
-                        </div>
-                    </div>
-                    <div class="company-details">
-                        <strong>{st.session_state.company_info['name']}</strong><br>
-                        {st.session_state.company_info['address']}<br>
-                        {st.session_state.company_info['city']}<br>
-                        {st.session_state.company_info['phone']}
-                    </div>
-                </div>
-                
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-bottom: 2rem;">
-                    <div>
-                        <strong>Bill To:</strong><br>
-                        {client_name}<br>
-                        {client_address if client_address else ''}<br>
-                        {client_email}
-                    </div>
-                    <div>
-                        <strong>Invoice Details:</strong><br>
-                        Date: {invoice_date.strftime('%d %b %Y')}<br>
-                        Due: {due_date.strftime('%d %b %Y')}<br>
-                        {f'PO: {po_number}' if po_number else ''}
-                    </div>
-                </div>
-                
-                <table class="preview-table">
-                    <thead>
-                        <tr>
-                            <th>Description</th>
-                            <th class="amount">Qty</th>
-                            <th class="amount">Price</th>
-                            <th class="amount">Tax</th>
-                            <th class="amount">Disc</th>
-                            <th class="amount">Total</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-            '''
+            st.divider()
             
-            # Add items
+            # Client and Invoice Details
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown("**Bill To:**")
+                st.markdown(f"{client_name}\n\n{client_address}\n\n{client_email}")
+            with col2:
+                st.markdown("**Invoice Details:**")
+                st.markdown(f"""
+                Date: {invoice_date.strftime('%d %b %Y')}  
+                Due: {due_date.strftime('%d %b %Y')}  
+                {f'PO: {po_number}' if po_number else ''}
+                """)
+            
+            st.divider()
+            
+            # Items Table
+            items_data = []
             for item in st.session_state.invoice_items:
-                preview_html += f'''
-                        <tr>
-                            <td>{item['description']}</td>
-                            <td class="amount">{item['quantity']}</td>
-                            <td class="amount">{format_amount(item['unit_price'], st.session_state.currency)}</td>
-                            <td class="amount">{item['tax_rate']}%</td>
-                            <td class="amount">{item['discount']}%</td>
-                            <td class="amount">{format_amount(item['total'], st.session_state.currency)}</td>
-                        </tr>
-                '''
+                items_data.append({
+                    "Description": item['description'],
+                    "Qty": item['quantity'],
+                    "Price": format_amount(item['unit_price'], st.session_state.currency),
+                    "Tax %": f"{item['tax_rate']}%",
+                    "Disc %": f"{item['discount']}%",
+                    "Total": format_amount(item['total'], st.session_state.currency)
+                })
             
-            # Add totals
-            preview_html += f'''
-                    </tbody>
-                </table>
-                
-                <div style="margin-top: 2rem; display: flex; justify-content: flex-end;">
-                    <table class="totals-table">
-                        <tr>
-                            <td>Subtotal:</td>
-                            <td class="amount">{format_amount(subtotal, st.session_state.currency)}</td>
-                        </tr>
-                        <tr>
-                            <td>Discount:</td>
-                            <td class="amount">-{format_amount(total_discount, st.session_state.currency)}</td>
-                        </tr>
-                        <tr>
-                            <td>Tax:</td>
-                            <td class="amount">{format_amount(total_tax, st.session_state.currency)}</td>
-                        </tr>
-                        <tr class="total-row">
-                            <td>Grand Total:</td>
-                            <td class="amount">{format_amount(grand_total, st.session_state.currency)}</td>
-                        </tr>
-                    </table>
-                </div>
-                
-                <div style="margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #e2e8f0; color: #475569;">
-                    <strong>Payment Details:</strong><br>
-                    {st.session_state.company_info.get('bank_details', 'Bank details not provided')}
-                </div>
-            </div>
-            '''
+            if items_data:
+                st.dataframe(
+                    pd.DataFrame(items_data),
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "Description": "Description",
+                        "Qty": st.column_config.NumberColumn("Qty", format="%d"),
+                        "Price": "Price",
+                        "Tax %": "Tax %",
+                        "Disc %": "Disc %",
+                        "Total": "Total"
+                    }
+                )
             
-            # Display preview
-            st.markdown(preview_html, unsafe_allow_html=True)
+            st.divider()
+            
+            # Totals
+            col1, col2, col3 = st.columns([1, 1, 1])
+            with col2:
+                st.markdown(f"""
+                **Subtotal:** {format_amount(subtotal, st.session_state.currency)}  
+                **Discount:** -{format_amount(total_discount, st.session_state.currency)}  
+                **Tax:** {format_amount(total_tax, st.session_state.currency)}  
+                """)
+            with col3:
+                st.markdown(f"### GRAND TOTAL\n# {format_amount(grand_total, st.session_state.currency)}")
+            
+            # Payment Details
+            if st.session_state.company_info.get('bank_details'):
+                st.divider()
+                st.markdown(f"**Payment Details:**\n{st.session_state.company_info['bank_details']}")
+            
+            st.markdown('</div>', unsafe_allow_html=True)
         
-        with preview_col2:
-            with st.container():
-                st.markdown('<div class="business-card">', unsafe_allow_html=True)
-                st.markdown("##### Actions")
-                
-                if st.button("💾 Save Invoice", use_container_width=True):
-                    try:
-                        conn = sqlite3.connect('invoices.db')
-                        c = conn.cursor()
-                        c.execute('''INSERT INTO invoices 
-                                   (invoice_number, client_name, client_email, invoice_date, 
-                                    due_date, currency, subtotal, tax_total, discount_total,
-                                    grand_total, status, created_at)
-                                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-                                 (invoice_number, client_name, client_email, str(invoice_date),
-                                  str(due_date), st.session_state.currency, subtotal, 
-                                  total_tax, total_discount, grand_total, 'draft', datetime.now().isoformat()))
-                        conn.commit()
-                        conn.close()
-                        st.success("Invoice saved successfully!")
-                    except Exception as e:
-                        st.error(f"Error saving: {e}")
-                
-                # PDF Generation
-                if PDF_AVAILABLE:
-                    if st.button("📄 Download PDF", use_container_width=True):
-                        with st.spinner("Generating PDF..."):
-                            # Prepare invoice data for PDF
-                            invoice_data = {
-                                'invoice_number': invoice_number,
-                                'invoice_date': invoice_date.strftime('%d %b %Y'),
-                                'due_date': due_date.strftime('%d %b %Y'),
-                                'po_number': po_number,
-                                'client': {
-                                    'name': client_name,
-                                    'email': client_email,
-                                    'address': client_address
-                                },
-                                'company_info': st.session_state.company_info,  # This now includes logo_bytes
-                                'items': st.session_state.invoice_items,
-                                'currency': st.session_state.currency,
-                                'totals': {
-                                    'subtotal': subtotal,
-                                    'discount': total_discount,
-                                    'tax': total_tax,
-                                    'grand_total': grand_total
-                                }
+        # Action Buttons
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            if st.button("💾 Save Invoice", use_container_width=True):
+                try:
+                    conn = sqlite3.connect('invoices.db')
+                    c = conn.cursor()
+                    c.execute('''INSERT INTO invoices 
+                               (invoice_number, client_name, client_email, invoice_date, 
+                                due_date, currency, subtotal, tax_total, discount_total,
+                                grand_total, status, created_at)
+                               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                             (invoice_number, client_name, client_email, str(invoice_date),
+                              str(due_date), st.session_state.currency, subtotal, 
+                              total_tax, total_discount, grand_total, 'draft', datetime.now().isoformat()))
+                    conn.commit()
+                    conn.close()
+                    st.success("Invoice saved successfully!")
+                except Exception as e:
+                    st.error(f"Error saving: {e}")
+        
+        with col2:
+            if PDF_AVAILABLE:
+                if st.button("📄 Download PDF", use_container_width=True):
+                    with st.spinner("Generating PDF..."):
+                        invoice_data = {
+                            'invoice_number': invoice_number,
+                            'invoice_date': invoice_date.strftime('%d %b %Y'),
+                            'due_date': due_date.strftime('%d %b %Y'),
+                            'po_number': po_number,
+                            'client': {
+                                'name': client_name,
+                                'email': client_email,
+                                'address': client_address
+                            },
+                            'company_info': st.session_state.company_info,
+                            'items': st.session_state.invoice_items,
+                            'currency': st.session_state.currency,
+                            'totals': {
+                                'subtotal': subtotal,
+                                'discount': total_discount,
+                                'tax': total_tax,
+                                'grand_total': grand_total
                             }
-                            
-                            pdf_buffer = generate_pdf_invoice(invoice_data)
-                            if pdf_buffer:
-                                b64 = base64.b64encode(pdf_buffer.getvalue()).decode()
-                                href = f'<a href="data:application/pdf;base64,{b64}" download="invoice_{invoice_number}.pdf" style="display: inline-block; padding: 0.5rem 1rem; background: #2563eb; color: white; text-decoration: none; border-radius: 6px; margin-top: 0.5rem; text-align: center;">📥 Download PDF</a>'
-                                st.markdown(href, unsafe_allow_html=True)
-                                st.success("PDF generated successfully!")
-                            else:
-                                st.error("Failed to generate PDF")
-                else:
-                    st.info("PDF generation requires: pip install reportlab")
-                
-                st.markdown("##### Email Invoice")
-                email_to = st.text_input("Send to", value=client_email if client_email else "")
-                if st.button("📧 Send Email", use_container_width=True):
-                    if email_to:
-                        st.info("Email functionality - configure SMTP settings")
-                    else:
-                        st.warning("Enter an email address")
-                
-                if st.button("🔄 New Invoice", use_container_width=True):
-                    st.session_state.invoice_items = []
-                    st.session_state.edit_index = -1
-                    st.session_state.invoice_number = f"INV-{datetime.now().strftime('%Y%m')}-{datetime.now().strftime('%d')}"
-                    st.rerun()
-                
-                st.markdown('</div>', unsafe_allow_html=True)
+                        }
+                        
+                        pdf_buffer = generate_pdf_invoice(invoice_data)
+                        if pdf_buffer:
+                            b64 = base64.b64encode(pdf_buffer.getvalue()).decode()
+                            st.markdown(f'<a href="data:application/pdf;base64,{b64}" download="invoice_{invoice_number}.pdf" style="display: inline-block; padding: 0.5rem 1rem; background: #2563eb; color: white; text-decoration: none; border-radius: 6px;">📥 Click to Download PDF</a>', unsafe_allow_html=True)
+                            st.success("PDF generated successfully!")
+                        else:
+                            st.error("Failed to generate PDF")
+            else:
+                st.info("PDF generation requires reportlab")
+        
+        with col3:
+            st.text_input("Send to", value=client_email if client_email else "", key="email_to")
+            if st.button("📧 Send Email", use_container_width=True):
+                st.info("Email functionality - configure SMTP settings")
+        
+        with col4:
+            if st.button("🔄 New Invoice", use_container_width=True):
+                st.session_state.invoice_items = []
+                st.session_state.edit_index = -1
+                st.session_state.invoice_number = f"INV-{datetime.now().strftime('%Y%m')}-{datetime.now().strftime('%d')}"
+                st.rerun()
 
 # ============================================================================
 # CLIENTS PAGE
@@ -1627,14 +1079,11 @@ elif st.session_state.current_page == "reports":
     
     with col1:
         st.metric("Total Invoices", "0", "0")
-    
     with col2:
         st.metric("Total Revenue", format_amount(0, st.session_state.currency), "0")
-    
     with col3:
         st.metric("Active Clients", "0", "0")
     
-    # Placeholder chart
     st.markdown('<div class="business-card">', unsafe_allow_html=True)
     st.markdown("##### Monthly Revenue")
     chart_data = pd.DataFrame({
@@ -1657,10 +1106,7 @@ elif st.session_state.current_page == "settings":
         with st.container():
             st.markdown('<div class="business-card">', unsafe_allow_html=True)
             
-            # LOGO SECTION
             st.markdown("##### Company Logo")
-            st.markdown("Upload your company logo for invoices")
-            
             logo_file = st.file_uploader(
                 "Choose logo image (PNG, JPG, JPEG)",
                 type=['png', 'jpg', 'jpeg'],
@@ -1671,19 +1117,14 @@ elif st.session_state.current_page == "settings":
                 if save_logo(logo_file):
                     st.success(f"Logo uploaded: {logo_file.name}")
             
-            # Show current logo
             if st.session_state.company_info.get('logo_base64'):
-                st.markdown('<div class="logo-preview">', unsafe_allow_html=True)
                 st.markdown(f'<div class="logo-container">{get_logo_html("80px", "200px")}</div>', unsafe_allow_html=True)
-                st.markdown('</div>', unsafe_allow_html=True)
-                
                 if st.button("🗑️ Remove Logo", use_container_width=True, key="remove_logo_settings"):
                     remove_logo()
                     st.rerun()
             
             st.markdown("---")
             
-            # COMPANY INFORMATION FORM
             with st.form("company_settings_form"):
                 st.markdown("##### Company Details")
                 
@@ -1699,9 +1140,7 @@ elif st.session_state.current_page == "settings":
                 
                 comp_bank = st.text_area("Bank Details", value=st.session_state.company_info.get('bank_details', ''), height=100)
                 
-                submitted = st.form_submit_button("💾 Save Company Settings", use_container_width=True)
-                
-                if submitted:
+                if st.form_submit_button("💾 Save Company Settings", use_container_width=True):
                     st.session_state.company_info.update({
                         'name': comp_name,
                         'address': comp_address,
@@ -1758,8 +1197,7 @@ elif st.session_state.current_page == "settings":
                             db_bytes = f.read()
                         b64 = base64.b64encode(db_bytes).decode()
                         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                        href = f'<a href="data:application/octet-stream;base64,{b64}" download="invoice_backup_{timestamp}.db">Click to Download</a>'
-                        st.markdown(href, unsafe_allow_html=True)
+                        st.markdown(f'<a href="data:application/octet-stream;base64,{b64}" download="invoice_backup_{timestamp}.db">Click to Download</a>', unsafe_allow_html=True)
                         st.success("Backup created!")
                     except:
                         st.warning("No database file found")
@@ -1783,7 +1221,7 @@ elif st.session_state.current_page == "settings":
 
 st.markdown("""
     <div class="app-footer">
-        <p>© 2026 TT Invoice Pro - Professional Invoicing for Trinidad & Tobago</p>
-        <p style="font-size: 0.75rem; margin-top: 0.5rem;">Version 2.0 | All amounts in TTD unless specified</p>
+        <p>© 2026 Invoice Pro - Professional Invoicing </p>
+        <p style="font-size: 0.75rem; margin-top: 0.5rem;">Version 2.0</p>
     </div>
 """, unsafe_allow_html=True)
