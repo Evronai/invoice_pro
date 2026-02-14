@@ -1,4 +1,4 @@
-# app.py
+# app.py (updated with logo upload)
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
@@ -42,7 +42,7 @@ except ImportError:
 try:
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import letter, A4
-    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image as RLImage
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.units import inch
     from reportlab.lib.enums import TA_RIGHT, TA_CENTER
@@ -90,7 +90,7 @@ FIXED_RATES = {
 }
 
 # ============================================================================
-# PROFESSIONAL CSS - FIXED FOR READABILITY
+# PROFESSIONAL CSS
 # ============================================================================
 
 st.markdown("""
@@ -98,30 +98,30 @@ st.markdown("""
     /* Import professional fonts */
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
     
-    /* Global styles - FIXED: proper contrast */
+    /* Global styles */
     .stApp {
         font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-        background-color: #f5f7fa;
+        background-color: #f8fafc;
         color: #1e293b;
     }
     
-    /* Override Streamlit defaults for better contrast */
-    .stMarkdown, .stText, p, li, .st-cb, .st-at {
+    /* Force all text to be dark by default */
+    .stMarkdown, .stText, p, li, span:not(.badge), div:not(.st-eb) {
         color: #1e293b !important;
     }
     
+    /* Headers */
     h1, h2, h3, h4, h5, h6 {
         color: #0f172a !important;
         font-weight: 600;
     }
     
-    /* Header styling - FIXED: dark text on light background */
+    /* Header styling */
     .app-header {
         background: white;
         padding: 1.5rem 2rem;
         border-bottom: 1px solid #e2e8f0;
         margin-bottom: 2rem;
-        color: #0f172a;
     }
     
     .app-title {
@@ -129,7 +129,6 @@ st.markdown("""
         font-size: 1.8rem;
         font-weight: 600;
         margin: 0;
-        letter-spacing: -0.02em;
     }
     
     .app-subtitle {
@@ -138,7 +137,7 @@ st.markdown("""
         margin-top: 0.25rem;
     }
     
-    /* Card styling - FIXED: dark text */
+    /* Card styling */
     .business-card {
         background: white;
         border-radius: 12px;
@@ -146,11 +145,22 @@ st.markdown("""
         box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         border: 1px solid #e2e8f0;
         margin-bottom: 1.5rem;
-        color: #1e293b;
     }
     
-    .business-card * {
-        color: #1e293b;
+    /* Ensure all text inside business-card is dark */
+    .business-card, 
+    .business-card *,
+    .business-card div,
+    .business-card p,
+    .business-card label,
+    .business-card span,
+    .business-card h1, 
+    .business-card h2, 
+    .business-card h3, 
+    .business-card h4, 
+    .business-card h5, 
+    .business-card h6 {
+        color: #1e293b !important;
     }
     
     /* Section headers */
@@ -163,44 +173,81 @@ st.markdown("""
         border-bottom: 1px solid #e2e8f0;
     }
     
-    /* Metric container */
-    .metric-container {
+    /* Logo styling */
+    .logo-container {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        margin-bottom: 1rem;
+        padding: 1rem;
         background: #f8fafc;
         border-radius: 8px;
-        padding: 1rem;
-        text-align: center;
-        border: 1px solid #e2e8f0;
+        border: 1px dashed #cbd5e1;
     }
     
-    .metric-value {
-        font-size: 1.5rem;
-        font-weight: 600;
-        color: #0f172a !important;
+    .logo-image {
+        max-width: 200px;
+        max-height: 100px;
+        object-fit: contain;
     }
     
-    .metric-label {
-        font-size: 0.8rem;
-        color: #475569 !important;
-        text-transform: uppercase;
-        letter-spacing: 0.02em;
+    .logo-preview {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        margin-top: 1rem;
     }
     
-    /* Form labels - FIXED: visible */
-    .stTextInput label, .stNumberInput label, .stDateInput label, .stSelectbox label, .stTextArea label {
+    /* Form labels */
+    .stTextInput label,
+    .stNumberInput label,
+    .stDateInput label,
+    .stSelectbox label,
+    .stTextArea label,
+    .stCheckbox label,
+    .stRadio label,
+    .stFileUploader label {
         color: #1e293b !important;
-        font-weight: 500;
-        font-size: 0.9rem;
+        font-weight: 500 !important;
+        font-size: 0.9rem !important;
+        opacity: 1 !important;
+        visibility: visible !important;
+        display: block !important;
+        margin-bottom: 0.25rem !important;
     }
     
     /* Input fields */
-    .stTextInput input, .stNumberInput input, .stDateInput input, .stSelectbox select, .stTextArea textarea {
+    .stTextInput input,
+    .stNumberInput input,
+    .stDateInput input,
+    .stSelectbox select,
+    .stTextArea textarea {
         color: #1e293b !important;
         background-color: white !important;
         border: 1px solid #cbd5e1 !important;
         border-radius: 6px;
+        padding: 0.5rem !important;
     }
     
-    /* Button styling - FIXED: visible text */
+    .stTextInput input:focus,
+    .stNumberInput input:focus,
+    .stDateInput input:focus,
+    .stSelectbox select:focus,
+    .stTextArea textarea:focus {
+        border-color: #0f172a !important;
+        box-shadow: 0 0 0 2px rgba(15,23,42,0.1) !important;
+    }
+    
+    /* Selectbox specific */
+    .stSelectbox div[data-baseweb="select"] {
+        color: #1e293b !important;
+    }
+    
+    .stSelectbox div[data-baseweb="select"] span {
+        color: #1e293b !important;
+    }
+    
+    /* Button styling */
     .stButton > button {
         font-family: 'Inter', sans-serif;
         font-weight: 500;
@@ -214,7 +261,6 @@ st.markdown("""
     .stButton > button:hover {
         border-color: #94a3b8;
         background: #f8fafc;
-        color: #0f172a !important;
     }
     
     .stButton > button[kind="primary"] {
@@ -225,10 +271,54 @@ st.markdown("""
     
     .stButton > button[kind="primary"]:hover {
         background: #1e293b;
-        color: white !important;
     }
     
-    /* DataFrames - FIXED: visible text */
+    /* Tabs */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 2rem;
+        background-color: white;
+        padding: 0.5rem;
+        border-radius: 8px;
+        margin-bottom: 1rem;
+    }
+    
+    .stTabs [data-baseweb="tab"] {
+        color: #475569 !important;
+        font-weight: 500;
+    }
+    
+    .stTabs [aria-selected="true"] {
+        color: #0f172a !important;
+        font-weight: 600;
+        border-bottom: 2px solid #0f172a;
+    }
+    
+    /* Tab content */
+    .stTabs [data-baseweb="tab-panel"] {
+        color: #1e293b !important;
+    }
+    
+    .stTabs [data-baseweb="tab-panel"] * {
+        color: #1e293b !important;
+    }
+    
+    /* Metric containers */
+    div[data-testid="metric-container"] {
+        background: white;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 1rem;
+    }
+    
+    div[data-testid="metric-container"] label {
+        color: #475569 !important;
+    }
+    
+    div[data-testid="metric-container"] div {
+        color: #0f172a !important;
+    }
+    
+    /* DataFrame/Table styling */
     .stDataFrame {
         color: #1e293b !important;
     }
@@ -255,9 +345,19 @@ st.markdown("""
         color: #1e293b !important;
         background-color: #f8fafc;
         border-radius: 6px;
+        font-weight: 500;
     }
     
-    /* Success/Warning/Error messages - FIXED: readable */
+    .streamlit-expanderContent {
+        color: #1e293b !important;
+        background-color: white;
+        border: 1px solid #e2e8f0;
+        border-top: none;
+        border-radius: 0 0 6px 6px;
+        padding: 1rem;
+    }
+    
+    /* Alert messages */
     .stAlert {
         color: #1e293b !important;
     }
@@ -282,25 +382,37 @@ st.markdown("""
         color: #1e40af !important;
     }
     
-    /* Invoice preview - FIXED: dark text */
+    /* Invoice preview */
     .invoice-preview {
         background: white;
         border-radius: 12px;
         padding: 2rem;
         border: 1px solid #e2e8f0;
-        color: #1e293b;
     }
     
     .invoice-preview * {
-        color: #1e293b;
+        color: #1e293b !important;
     }
     
     .invoice-header {
         display: flex;
         justify-content: space-between;
+        align-items: center;
         margin-bottom: 2rem;
         padding-bottom: 1rem;
         border-bottom: 2px solid #e2e8f0;
+    }
+    
+    .invoice-header-left {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+    }
+    
+    .invoice-logo {
+        max-height: 60px;
+        max-width: 150px;
+        object-fit: contain;
     }
     
     .invoice-title {
@@ -309,33 +421,24 @@ st.markdown("""
         color: #0f172a !important;
     }
     
-    /* Table in preview */
-    .invoice-preview table {
+    .company-details {
+        text-align: right;
+    }
+    
+    /* Sidebar */
+    section[data-testid="stSidebar"] * {
         color: #1e293b !important;
     }
     
-    .invoice-preview th {
-        color: #0f172a !important;
-        font-weight: 600;
-    }
-    
-    .invoice-preview td {
+    section[data-testid="stSidebar"] .stButton > button {
+        background: white;
         color: #1e293b !important;
+        border: 1px solid #e2e8f0;
     }
     
-    /* Sidebar - FIXED: readable */
-    .css-1d391kg, .css-1wrcr25 {
-        background-color: white;
-    }
-    
-    .sidebar .sidebar-content {
-        background-color: white;
-        color: #1e293b;
-    }
-    
-    /* Radio buttons and checkboxes */
-    .stRadio label, .stCheckbox label {
-        color: #1e293b !important;
+    section[data-testid="stSidebar"] .stButton > button[kind="primary"] {
+        background: #0f172a;
+        color: white !important;
     }
     
     /* Footer */
@@ -353,34 +456,53 @@ st.markdown("""
         color: #64748b !important;
     }
     
-    /* Tabs */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 2rem;
+    /* File uploader */
+    .stFileUploader {
+        margin-bottom: 1rem;
     }
     
-    .stTabs [data-baseweb="tab"] {
-        color: #64748b !important;
-    }
-    
-    .stTabs [aria-selected="true"] {
-        color: #0f172a !important;
-        font-weight: 600;
-    }
-    
-    /* Metric cards */
-    div[data-testid="metric-container"] {
-        background: white;
-        border: 1px solid #e2e8f0;
-        border-radius: 8px;
+    .stFileUploader > div {
+        border: 1px dashed #cbd5e1;
+        border-radius: 6px;
         padding: 1rem;
+        background: #f8fafc;
     }
     
-    div[data-testid="metric-container"] label {
-        color: #475569 !important;
+    /* Settings panel fixes */
+    .stTabs [data-baseweb="tab-panel"] .stTextInput label,
+    .stTabs [data-baseweb="tab-panel"] .stNumberInput label,
+    .stTabs [data-baseweb="tab-panel"] .stSelectbox label,
+    .stTabs [data-baseweb="tab-panel"] .stTextArea label,
+    .stTabs [data-baseweb="tab-panel"] .stFileUploader label {
+        color: #1e293b !important;
+        font-weight: 500 !important;
+        font-size: 0.9rem !important;
+        margin-bottom: 0.25rem !important;
     }
     
-    div[data-testid="metric-container"] div {
-        color: #0f172a !important;
+    /* Download links */
+    a {
+        color: #2563eb !important;
+        text-decoration: none;
+    }
+    
+    a:hover {
+        text-decoration: underline;
+    }
+    
+    /* Placeholder text */
+    input::placeholder {
+        color: #94a3b8 !important;
+        opacity: 1;
+    }
+    
+    /* Dropdown menu items */
+    div[role="listbox"] li {
+        color: #1e293b !important;
+    }
+    
+    div[role="listbox"] li:hover {
+        background-color: #f1f5f9 !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -427,6 +549,46 @@ def init_database():
         return False
 
 # ============================================================================
+# LOGO FUNCTIONS
+# ============================================================================
+
+def save_logo(uploaded_file):
+    """Save uploaded logo to session state"""
+    if uploaded_file is not None:
+        # Read the file
+        bytes_data = uploaded_file.getvalue()
+        
+        # Convert to base64 for display
+        encoded = base64.b64encode(bytes_data).decode()
+        
+        # Store in session state
+        st.session_state.company_info['logo_bytes'] = bytes_data
+        st.session_state.company_info['logo_base64'] = encoded
+        st.session_state.company_info['logo_filename'] = uploaded_file.name
+        st.session_state.company_info['logo_mime'] = uploaded_file.type
+        
+        return True
+    return False
+
+def get_logo_html(max_height="60px", max_width="150px"):
+    """Get HTML for logo display"""
+    if st.session_state.company_info.get('logo_base64'):
+        mime = st.session_state.company_info.get('logo_mime', 'image/png')
+        return f'<img src="data:{mime};base64,{st.session_state.company_info["logo_base64"]}" style="max-height: {max_height}; max-width: {max_width}; object-fit: contain;" class="invoice-logo">'
+    return ""
+
+def remove_logo():
+    """Remove logo from session state"""
+    if 'logo_bytes' in st.session_state.company_info:
+        del st.session_state.company_info['logo_bytes']
+    if 'logo_base64' in st.session_state.company_info:
+        del st.session_state.company_info['logo_base64']
+    if 'logo_filename' in st.session_state.company_info:
+        del st.session_state.company_info['logo_filename']
+    if 'logo_mime' in st.session_state.company_info:
+        del st.session_state.company_info['logo_mime']
+
+# ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
 
@@ -455,6 +617,7 @@ def init_session_state():
         'email': 'accounts@yourbusiness.com',
         'tax_id': '123456789',
         'bank_details': 'First Citizens Bank\nAccount: 123456789\nSort Code: 123-456'
+        # Logo fields will be added dynamically when uploaded
     }
     
     defaults = {
@@ -601,6 +764,27 @@ if st.session_state.current_page == "create":
             company_tax_id = st.text_input("TRN / Tax ID", value=st.session_state.company_info['tax_id'])
             company_bank = st.text_area("Bank Details", value=st.session_state.company_info.get('bank_details', ''), height=80)
             
+            # Logo upload
+            st.markdown("##### Company Logo")
+            logo_file = st.file_uploader(
+                "Upload Logo (PNG, JPG, JPEG)",
+                type=['png', 'jpg', 'jpeg'],
+                help="Recommended size: 200x100 pixels"
+            )
+            
+            if logo_file is not None:
+                if save_logo(logo_file):
+                    st.success(f"Logo uploaded: {logo_file.name}")
+            
+            # Show current logo if exists
+            if st.session_state.company_info.get('logo_base64'):
+                st.markdown('<div class="logo-preview">', unsafe_allow_html=True)
+                st.markdown(f'<div class="logo-container">{get_logo_html("80px", "200px")}</div>', unsafe_allow_html=True)
+                if st.button("Remove Logo"):
+                    remove_logo()
+                    st.rerun()
+                st.markdown('</div>', unsafe_allow_html=True)
+            
             if st.button("Update Company Info", use_container_width=True):
                 st.session_state.company_info.update({
                     'name': company_name,
@@ -706,14 +890,20 @@ if st.session_state.current_page == "create":
         preview_col1, preview_col2 = st.columns([2, 1])
         
         with preview_col1:
+            # Get logo HTML
+            logo_html = get_logo_html("60px", "150px")
+            
             st.markdown(f"""
             <div class="invoice-preview">
                 <div class="invoice-header">
-                    <div>
-                        <div class="invoice-title">INVOICE</div>
-                        <div style="color: #475569; margin-top: 0.5rem;">{invoice_number}</div>
+                    <div class="invoice-header-left">
+                        {logo_html if logo_html else ''}
+                        <div>
+                            <div class="invoice-title">INVOICE</div>
+                            <div style="color: #475569; margin-top: 0.5rem;">{invoice_number}</div>
+                        </div>
                     </div>
-                    <div style="text-align: right;">
+                    <div class="company-details">
                         <strong>{st.session_state.company_info['name']}</strong><br>
                         {st.session_state.company_info['address']}<br>
                         {st.session_state.company_info['city']}<br>
@@ -950,6 +1140,31 @@ elif st.session_state.current_page == "settings":
                     comp_tax = st.text_input("TRN/Tax ID", value=st.session_state.company_info['tax_id'])
                 
                 comp_bank = st.text_area("Bank Details", value=st.session_state.company_info.get('bank_details', ''), height=100)
+                
+                # Logo upload in settings
+                st.markdown("##### Company Logo")
+                st.markdown("Upload your company logo for invoices")
+                logo_file = st.file_uploader(
+                    "Choose logo image (PNG, JPG, JPEG)",
+                    type=['png', 'jpg', 'jpeg'],
+                    key="settings_logo"
+                )
+                
+                if logo_file is not None:
+                    if save_logo(logo_file):
+                        st.success(f"Logo uploaded: {logo_file.name}")
+                
+                # Show current logo
+                if st.session_state.company_info.get('logo_base64'):
+                    st.markdown('<div class="logo-preview">', unsafe_allow_html=True)
+                    st.markdown(f'<div class="logo-container">{get_logo_html("80px", "200px")}</div>', unsafe_allow_html=True)
+                    st.markdown('</div>', unsafe_allow_html=True)
+                    
+                    col_remove, _ = st.columns(2)
+                    with col_remove:
+                        if st.button("Remove Logo"):
+                            remove_logo()
+                            st.rerun()
                 
                 if st.form_submit_button("Save Settings", use_container_width=True):
                     st.session_state.company_info.update({
