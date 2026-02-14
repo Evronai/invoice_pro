@@ -2,8 +2,11 @@
 streamlit>=1.28.0
 pandas>=1.5.0
 plotly>=5.14.0
-forex-python>=1.8
-stripe>=5.0.0
+python-dotenv>=1.0.0
 Pillow>=9.5.0
-reportlab>=4.0.0  # Optional, for PDF generation
-python-dotenv>=1.0.0  # For environment variables
+
+# Optional dependencies (install as needed)
+# forex-python>=1.8  # For currency conversion
+# stripe>=5.0.0      # For payment integration
+# reportlab>=4.0.0   # For PDF generation
+# openpyxl>=3.1.0    # For Excel export
