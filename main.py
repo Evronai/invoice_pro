@@ -1,4 +1,4 @@
-# app.py (updated with form fix)
+# app.py (Complete updated version)
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
@@ -90,7 +90,7 @@ FIXED_RATES = {
 }
 
 # ============================================================================
-# PROFESSIONAL CSS
+# PROFESSIONAL CSS - FIXED FOR VISIBILITY
 # ============================================================================
 
 st.markdown("""
@@ -106,7 +106,7 @@ st.markdown("""
     }
     
     /* Force all text to be dark by default */
-    .stMarkdown, .stText, p, li, span:not(.badge), div:not(.st-eb) {
+    .stMarkdown, .stText, p, li, span, div {
         color: #1e293b !important;
     }
     
@@ -148,18 +148,7 @@ st.markdown("""
     }
     
     /* Ensure all text inside business-card is dark */
-    .business-card, 
-    .business-card *,
-    .business-card div,
-    .business-card p,
-    .business-card label,
-    .business-card span,
-    .business-card h1, 
-    .business-card h2, 
-    .business-card h3, 
-    .business-card h4, 
-    .business-card h5, 
-    .business-card h6 {
+    .business-card * {
         color: #1e293b !important;
     }
     
@@ -171,6 +160,49 @@ st.markdown("""
         margin-bottom: 1.25rem;
         padding-bottom: 0.75rem;
         border-bottom: 1px solid #e2e8f0;
+    }
+    
+    /* TABS - FIXED FOR VISIBILITY */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 2rem;
+        background-color: #ffffff;
+        padding: 0.75rem;
+        border-radius: 8px;
+        border: 1px solid #e2e8f0;
+        margin-bottom: 1.5rem;
+    }
+    
+    .stTabs [data-baseweb="tab"] {
+        color: #334155 !important;  /* Dark gray for inactive tabs */
+        font-weight: 500;
+        font-size: 1rem;
+        background-color: transparent;
+        border-radius: 6px;
+        padding: 0.5rem 1rem;
+        transition: all 0.2s;
+    }
+    
+    .stTabs [data-baseweb="tab"]:hover {
+        color: #0f172a !important;
+        background-color: #f1f5f9;
+    }
+    
+    .stTabs [aria-selected="true"] {
+        color: #ffffff !important;  /* White text for active tab */
+        background-color: #0f172a !important;  /* Dark background for active tab */
+        font-weight: 600;
+        border-radius: 6px;
+    }
+    
+    /* Tab content */
+    .stTabs [data-baseweb="tab-panel"] {
+        color: #1e293b !important;
+        background-color: transparent;
+        padding: 1rem 0;
+    }
+    
+    .stTabs [data-baseweb="tab-panel"] * {
+        color: #1e293b !important;
     }
     
     /* Logo styling */
@@ -185,17 +217,11 @@ st.markdown("""
         border: 1px dashed #cbd5e1;
     }
     
-    .logo-image {
-        max-width: 200px;
-        max-height: 100px;
-        object-fit: contain;
-    }
-    
     .logo-preview {
         display: flex;
         justify-content: center;
         align-items: center;
-        margin-top: 1rem;
+        margin: 1rem 0;
     }
     
     /* Form labels */
@@ -210,9 +236,6 @@ st.markdown("""
         color: #1e293b !important;
         font-weight: 500 !important;
         font-size: 0.9rem !important;
-        opacity: 1 !important;
-        visibility: visible !important;
-        display: block !important;
         margin-bottom: 0.25rem !important;
     }
     
@@ -261,6 +284,7 @@ st.markdown("""
     .stButton > button:hover {
         border-color: #94a3b8;
         background: #f8fafc;
+        color: #0f172a !important;
     }
     
     .stButton > button[kind="primary"] {
@@ -271,35 +295,7 @@ st.markdown("""
     
     .stButton > button[kind="primary"]:hover {
         background: #1e293b;
-    }
-    
-    /* Tabs */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 2rem;
-        background-color: white;
-        padding: 0.5rem;
-        border-radius: 8px;
-        margin-bottom: 1rem;
-    }
-    
-    .stTabs [data-baseweb="tab"] {
-        color: #475569 !important;
-        font-weight: 500;
-    }
-    
-    .stTabs [aria-selected="true"] {
-        color: #0f172a !important;
-        font-weight: 600;
-        border-bottom: 2px solid #0f172a;
-    }
-    
-    /* Tab content */
-    .stTabs [data-baseweb="tab-panel"] {
-        color: #1e293b !important;
-    }
-    
-    .stTabs [data-baseweb="tab-panel"] * {
-        color: #1e293b !important;
+        color: white !important;
     }
     
     /* Metric containers */
@@ -346,6 +342,11 @@ st.markdown("""
         background-color: #f8fafc;
         border-radius: 6px;
         font-weight: 500;
+        padding: 0.5rem 1rem;
+    }
+    
+    .streamlit-expanderHeader:hover {
+        background-color: #f1f5f9;
     }
     
     .streamlit-expanderContent {
@@ -360,26 +361,31 @@ st.markdown("""
     /* Alert messages */
     .stAlert {
         color: #1e293b !important;
+        border-radius: 6px;
     }
     
     .stSuccess {
         background-color: #dcfce7;
         color: #166534 !important;
+        border: 1px solid #86efac;
     }
     
     .stWarning {
         background-color: #fef9c3;
         color: #854d0e !important;
+        border: 1px solid #fde047;
     }
     
     .stError {
         background-color: #fee2e2;
         color: #991b1b !important;
+        border: 1px solid #fecaca;
     }
     
     .stInfo {
         background-color: #dbeafe;
         color: #1e40af !important;
+        border: 1px solid #bfdbfe;
     }
     
     /* Invoice preview */
@@ -423,9 +429,15 @@ st.markdown("""
     
     .company-details {
         text-align: right;
+        color: #475569 !important;
     }
     
     /* Sidebar */
+    section[data-testid="stSidebar"] {
+        background-color: white;
+        border-right: 1px solid #e2e8f0;
+    }
+    
     section[data-testid="stSidebar"] * {
         color: #1e293b !important;
     }
@@ -434,11 +446,23 @@ st.markdown("""
         background: white;
         color: #1e293b !important;
         border: 1px solid #e2e8f0;
+        text-align: left;
+        justify-content: flex-start;
+    }
+    
+    section[data-testid="stSidebar"] .stButton > button:hover {
+        background: #f1f5f9;
+        border-color: #94a3b8;
     }
     
     section[data-testid="stSidebar"] .stButton > button[kind="primary"] {
         background: #0f172a;
         color: white !important;
+        border: none;
+    }
+    
+    section[data-testid="stSidebar"] .stButton > button[kind="primary"]:hover {
+        background: #1e293b;
     }
     
     /* Footer */
@@ -468,41 +492,49 @@ st.markdown("""
         background: #f8fafc;
     }
     
-    /* Settings panel fixes */
-    .stTabs [data-baseweb="tab-panel"] .stTextInput label,
-    .stTabs [data-baseweb="tab-panel"] .stNumberInput label,
-    .stTabs [data-baseweb="tab-panel"] .stSelectbox label,
-    .stTabs [data-baseweb="tab-panel"] .stTextArea label,
-    .stTabs [data-baseweb="tab-panel"] .stFileUploader label {
-        color: #1e293b !important;
-        font-weight: 500 !important;
-        font-size: 0.9rem !important;
-        margin-bottom: 0.25rem !important;
+    .stFileUploader > div:hover {
+        background: #f1f5f9;
+        border-color: #94a3b8;
     }
     
     /* Download links */
     a {
         color: #2563eb !important;
         text-decoration: none;
+        font-weight: 500;
     }
     
     a:hover {
         text-decoration: underline;
+        color: #1d4ed8 !important;
     }
     
     /* Placeholder text */
-    input::placeholder {
+    input::placeholder, textarea::placeholder {
         color: #94a3b8 !important;
         opacity: 1;
+        font-style: italic;
     }
     
     /* Dropdown menu items */
+    div[role="listbox"] {
+        background-color: white;
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+    }
+    
     div[role="listbox"] li {
         color: #1e293b !important;
+        padding: 0.5rem 1rem;
     }
     
     div[role="listbox"] li:hover {
         background-color: #f1f5f9 !important;
+    }
+    
+    div[role="listbox"] li[aria-selected="true"] {
+        background-color: #e2e8f0 !important;
+        font-weight: 600;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -769,7 +801,8 @@ if st.session_state.current_page == "create":
             logo_file = st.file_uploader(
                 "Upload Logo (PNG, JPG, JPEG)",
                 type=['png', 'jpg', 'jpeg'],
-                help="Recommended size: 200x100 pixels"
+                help="Recommended size: 200x100 pixels",
+                key="create_logo_upload"
             )
             
             if logo_file is not None:
@@ -780,7 +813,7 @@ if st.session_state.current_page == "create":
             if st.session_state.company_info.get('logo_base64'):
                 st.markdown('<div class="logo-preview">', unsafe_allow_html=True)
                 st.markdown(f'<div class="logo-container">{get_logo_html("80px", "200px")}</div>', unsafe_allow_html=True)
-                if st.button("Remove Logo"):
+                if st.button("Remove Logo", key="remove_logo_create"):
                     remove_logo()
                     st.rerun()
                 st.markdown('</div>', unsafe_allow_html=True)
@@ -1121,12 +1154,11 @@ elif st.session_state.current_page == "reports":
 elif st.session_state.current_page == "settings":
     st.markdown('<div class="section-header">⚙️ Settings</div>', unsafe_allow_html=True)
     
-    tabs = st.tabs(["Company", "Currency", "Backup"])
+    tabs = st.tabs(["🏢 Company", "💰 Currency", "💾 Backup"])
     
     with tabs[0]:
         with st.container():
             st.markdown('<div class="business-card">', unsafe_allow_html=True)
-            st.markdown("##### Company Information")
             
             # LOGO SECTION - OUTSIDE THE FORM
             st.markdown("##### Company Logo")
@@ -1149,7 +1181,7 @@ elif st.session_state.current_page == "settings":
                 st.markdown('</div>', unsafe_allow_html=True)
                 
                 # Remove button is outside any form
-                if st.button("🗑️ Remove Logo", use_container_width=True):
+                if st.button("🗑️ Remove Logo", use_container_width=True, key="remove_logo_settings"):
                     remove_logo()
                     st.rerun()
             
