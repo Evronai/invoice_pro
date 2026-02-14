@@ -1,4 +1,4 @@
-# app.py (Complete fixed version with PDF generation)
+# app.py (Complete fixed version with visible tabs)
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
@@ -95,7 +95,7 @@ FIXED_RATES = {
 }
 
 # ============================================================================
-# PROFESSIONAL CSS - FIXED TAB VISIBILITY
+# PROFESSIONAL CSS - FIXED TAB VISIBILITY (LIGHT TABS WITH DARK TEXT)
 # ============================================================================
 
 st.markdown("""
@@ -158,22 +158,21 @@ st.markdown("""
         border-bottom: 1px solid #e2e8f0;
     }
     
-    /* TABS - COMPLETELY FIXED FOR MAXIMUM VISIBILITY */
+    /* TABS - COMPLETELY FIXED FOR VISIBILITY (LIGHT BACKGROUND, DARK TEXT) */
     .stTabs [data-baseweb="tab-list"] {
         gap: 0.5rem;
         background-color: #ffffff;
         padding: 0.5rem;
         border-radius: 10px;
-        border: 1px solid #cbd5e1;
+        border: 1px solid #d1d5db;
         margin-bottom: 1.5rem;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
     }
     
     .stTabs [data-baseweb="tab"] {
-        color: #334155 !important;  /* Dark gray for inactive tabs */
+        color: #1f2937 !important;  /* Very dark gray for inactive tabs */
         font-weight: 500;
         font-size: 1rem;
-        background-color: #f8fafc;
+        background-color: #f3f4f6;  /* Light gray background */
         border-radius: 8px;
         padding: 0.5rem 1.2rem;
         transition: all 0.2s ease;
@@ -181,17 +180,16 @@ st.markdown("""
     }
     
     .stTabs [data-baseweb="tab"]:hover {
-        color: #0f172a !important;
-        background-color: #f1f5f9;
-        border-color: #94a3b8;
+        color: #111827 !important;
+        background-color: #e5e7eb;  /* Slightly darker on hover */
+        border-color: #9ca3af;
     }
     
     .stTabs [aria-selected="true"] {
         color: #ffffff !important;  /* White text for active tab */
-        background-color: #0f172a !important;  /* Dark navy background */
+        background-color: #1e40af !important;  /* Dark blue background */
         font-weight: 600;
-        border: 1px solid #0f172a;
-        box-shadow: 0 2px 4px rgba(15,23,42,0.2);
+        border: 1px solid #1e3a8a;
     }
     
     /* Tab content */
