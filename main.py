@@ -1,4 +1,4 @@
-# app.py (Complete updated version with fixed tabs)
+# app.py (Complete updated version with fixed invoice preview)
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
@@ -962,7 +962,7 @@ if st.session_state.current_page == "create":
             
             st.markdown('</div>', unsafe_allow_html=True)
     
-    # Preview section
+    # Preview section - FIXED
     if st.session_state.invoice_items and client_name:
         st.markdown('<div class="section-header">👁️ Invoice Preview</div>', unsafe_allow_html=True)
         
@@ -972,7 +972,14 @@ if st.session_state.current_page == "create":
             # Get logo HTML
             logo_html = get_logo_html("60px", "150px")
             
-            st.markdown(f"""
+            # Calculate totals for preview
+            subtotal = sum(item['subtotal'] for item in st.session_state.invoice_items)
+            total_discount = sum(item['discount_amount'] for item in st.session_state.invoice_items)
+            total_tax = sum(item['tax_amount'] for item in st.session_state.invoice_items)
+            grand_total = sum(item['total'] for item in st.session_state.invoice_items)
+            
+            # Build the preview HTML as a single string
+            preview_html = f'''
             <div class="invoice-preview">
                 <div class="invoice-header">
                     <div class="invoice-header-left">
@@ -1016,10 +1023,11 @@ if st.session_state.current_page == "create":
                         </tr>
                     </thead>
                     <tbody>
-            """, unsafe_allow_html=True)
+            '''
             
+            # Add items rows
             for item in st.session_state.invoice_items:
-                st.markdown(f"""
+                preview_html += f'''
                         <tr style="border-bottom: 1px solid #e2e8f0;">
                             <td style="padding: 0.75rem;">{item['description']}</td>
                             <td style="padding: 0.75rem; text-align: right;">{item['quantity']}</td>
@@ -1027,9 +1035,10 @@ if st.session_state.current_page == "create":
                             <td style="padding: 0.75rem; text-align: right;">{item['tax_rate']}%</td>
                             <td style="padding: 0.75rem; text-align: right;">{format_amount(item['total'], st.session_state.currency)}</td>
                         </tr>
-                """, unsafe_allow_html=True)
+                '''
             
-            st.markdown(f"""
+            # Add footer with totals
+            preview_html += f'''
                     </tbody>
                 </table>
                 
@@ -1049,7 +1058,7 @@ if st.session_state.current_page == "create":
                         </tr>
                         <tr style="border-top: 2px solid #e2e8f0;">
                             <td style="padding: 0.5rem 0.25rem; font-weight: 600;">Total:</td>
-                            <td style="padding: 0.5rem 0.25rem; text-align: right; font-weight: 600;">{format_amount(grand_total, st.session_state.currency)}</td>
+                            <td style="padding: 0.5rem 0.25rem; text-align: right; font-weight: 600; font-size: 1.2rem;">{format_amount(grand_total, st.session_state.currency)}</td>
                         </tr>
                     </table>
                 </div>
@@ -1059,7 +1068,10 @@ if st.session_state.current_page == "create":
                     {st.session_state.company_info.get('bank_details', 'Bank details not provided')}
                 </div>
             </div>
-            """, unsafe_allow_html=True)
+            '''
+            
+            # Display the preview
+            st.markdown(preview_html, unsafe_allow_html=True)
         
         with preview_col2:
             with st.container():
@@ -1084,7 +1096,8 @@ if st.session_state.current_page == "create":
                         st.error(f"Error saving: {e}")
                 
                 if PDF_AVAILABLE:
-                    st.button("📄 Download PDF", use_container_width=True)
+                    if st.button("📄 Download PDF", use_container_width=True):
+                        st.info("PDF generation - will be implemented")
                 else:
                     st.info("PDF generation: pip install reportlab")
                 
