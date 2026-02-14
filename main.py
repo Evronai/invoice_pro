@@ -1,4 +1,4 @@
-# app.py (Complete final version with colorful buttons)
+# app.py (Complete final version with item editing and grand total)
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
@@ -186,7 +186,7 @@ st.markdown("""
     
     .stTabs [aria-selected="true"] {
         color: #ffffff !important;
-        background-color: #2563eb !important;  /* Bright blue for active tab */
+        background-color: #2563eb !important;
         font-weight: 600;
         border: 1px solid #1d4ed8;
     }
@@ -256,7 +256,8 @@ st.markdown("""
     /* Success/Save buttons - green */
     .stButton > button:has(span:contains("Save")),
     .stButton > button:has(span:contains("Add")),
-    .stButton > button:has(span:contains("Update")) {
+    .stButton > button:has(span:contains("Update")),
+    .stButton > button:has(span:contains("Recalculate")) {
         background: white;
         color: #059669 !important;
         border: 2px solid #059669;
@@ -264,13 +265,14 @@ st.markdown("""
     
     .stButton > button:has(span:contains("Save")):hover,
     .stButton > button:has(span:contains("Add")):hover,
-    .stButton > button:has(span:contains("Update")):hover {
+    .stButton > button:has(span:contains("Update")):hover,
+    .stButton > button:has(span:contains("Recalculate")):hover {
         background: #d1fae5;
         border-color: #047857;
         color: #047857 !important;
     }
     
-    /* Action buttons in preview - colorful */
+    /* Action buttons - colorful */
     .stButton > button:has(span:contains("PDF")) {
         background: white;
         color: #7c3aed !important;
@@ -294,16 +296,30 @@ st.markdown("""
     }
     
     .stButton > button:has(span:contains("New")),
-    .stButton > button:has(span:contains("Clear")) {
+    .stButton > button:has(span:contains("Clear")),
+    .stButton > button:has(span:contains("Reset")) {
         background: white;
         color: #6b7280 !important;
         border: 2px solid #6b7280;
     }
     
     .stButton > button:has(span:contains("New")):hover,
-    .stButton > button:has(span:contains("Clear")):hover {
+    .stButton > button:has(span:contains("Clear")):hover,
+    .stButton > button:has(span:contains("Reset")):hover {
         background: #f3f4f6;
         border-color: #4b5563;
+    }
+    
+    /* Cancel button - orange */
+    .stButton > button:has(span:contains("Cancel")) {
+        background: white;
+        color: #ea580c !important;
+        border: 2px solid #ea580c;
+    }
+    
+    .stButton > button:has(span:contains("Cancel")):hover {
+        background: #fff7ed;
+        border-color: #c2410c;
     }
     
     /* Sidebar buttons */
@@ -518,6 +534,40 @@ st.markdown("""
         text-align: right;
         color: #475569 !important;
         line-height: 1.5;
+    }
+    
+    /* Sidebar */
+    section[data-testid="stSidebar"] {
+        background-color: white;
+        border-right: 1px solid #e2e8f0;
+    }
+    
+    section[data-testid="stSidebar"] * {
+        color: #1e293b !important;
+    }
+    
+    section[data-testid="stSidebar"] .stButton > button {
+        background: white;
+        color: #2563eb !important;
+        border: 2px solid #2563eb;
+        text-align: left;
+        justify-content: flex-start;
+        margin-bottom: 0.25rem;
+    }
+    
+    section[data-testid="stSidebar"] .stButton > button:hover {
+        background: #eff6ff;
+        border-color: #1d4ed8;
+    }
+    
+    section[data-testid="stSidebar"] .stButton > button[kind="primary"] {
+        background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
+        color: white !important;
+        border: none;
+    }
+    
+    section[data-testid="stSidebar"] .stButton > button[kind="primary"]:hover {
+        background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%);
     }
     
     /* Footer */
@@ -838,7 +888,8 @@ def init_session_state():
         'currency': 'TTD',
         'database_initialized': False,
         'current_page': 'create',
-        'clients': []
+        'clients': [],
+        'edit_index': -1  # For item editing
     }
     
     for key, value in defaults.items():
@@ -916,9 +967,9 @@ with st.sidebar:
     st.markdown("### Quick Stats")
     col1, col2 = st.columns(2)
     with col1:
-        st.metric("Invoices", "0", "0")
+        st.metric("Invoices", str(len(st.session_state.invoice_items)), "0")
     with col2:
-        st.metric("Clients", "0", "0")
+        st.metric("Items", str(len(st.session_state.invoice_items)), "0")
 
 # ============================================================================
 # MAIN CONTENT
@@ -1014,88 +1065,232 @@ if st.session_state.current_page == "create":
             st.markdown('<div class="business-card">', unsafe_allow_html=True)
             st.markdown('<div class="section-header">📦 Invoice Items</div>', unsafe_allow_html=True)
             
-            # Item entry form
+            # Item entry/Edit form
             with st.form("item_form", clear_on_submit=True):
-                description = st.text_input("Description *", placeholder="Item or service description")
+                # Check if we're editing an existing item
+                editing = st.session_state.edit_index >= 0 and st.session_state.edit_index < len(st.session_state.invoice_items)
+                
+                if editing:
+                    st.markdown(f"##### ✏️ Editing Item #{st.session_state.edit_index + 1}")
+                    item = st.session_state.invoice_items[st.session_state.edit_index]
+                    default_desc = item['description']
+                    default_qty = item['quantity']
+                    default_price = item['unit_price']
+                    default_tax = item['tax_rate']
+                    default_discount = item['discount']
+                else:
+                    st.markdown("##### ➕ Add New Item")
+                    default_desc = ""
+                    default_qty = 1
+                    default_price = 0.0
+                    default_tax = 0.0
+                    default_discount = 0.0
+                
+                description = st.text_input("Description *", placeholder="Item or service description", value=default_desc)
                 
                 col_qty, col_price = st.columns(2)
                 with col_qty:
-                    quantity = st.number_input("Quantity", min_value=1, value=1)
+                    quantity = st.number_input("Quantity", min_value=1, value=default_qty, step=1)
                 with col_price:
                     unit_price = st.number_input(f"Unit Price ({get_currency_symbol(st.session_state.currency)})", 
-                                                min_value=0.0, value=0.0, step=10.0)
+                                                min_value=0.0, value=default_price, step=10.0, format="%.2f")
                 
                 col_tax, col_discount = st.columns(2)
                 with col_tax:
-                    tax_rate = st.number_input("Tax %", min_value=0.0, max_value=100.0, value=0.0, step=2.5)
+                    tax_rate = st.number_input("Tax %", min_value=0.0, max_value=100.0, value=default_tax, step=0.5, format="%.1f")
                 with col_discount:
-                    discount = st.number_input("Discount %", min_value=0.0, max_value=100.0, value=0.0, step=5.0)
+                    discount = st.number_input("Discount %", min_value=0.0, max_value=100.0, value=default_discount, step=0.5, format="%.1f")
                 
-                if st.form_submit_button("➕ Add Item", use_container_width=True):
-                    if description and unit_price > 0:
-                        subtotal = quantity * unit_price
-                        discount_amount = subtotal * (discount / 100)
-                        taxable_amount = subtotal - discount_amount
-                        tax_amount = taxable_amount * (tax_rate / 100)
-                        total = taxable_amount + tax_amount
-                        
-                        st.session_state.invoice_items.append({
-                            'description': description,
-                            'quantity': quantity,
-                            'unit_price': unit_price,
-                            'tax_rate': tax_rate,
-                            'discount': discount,
-                            'subtotal': subtotal,
-                            'discount_amount': discount_amount,
-                            'tax_amount': tax_amount,
-                            'total': total
-                        })
-                        st.rerun()
+                # Calculate live preview of item total
+                if description and unit_price > 0:
+                    subtotal = quantity * unit_price
+                    discount_amount = subtotal * (discount / 100)
+                    taxable_amount = subtotal - discount_amount
+                    tax_amount = taxable_amount * (tax_rate / 100)
+                    item_total = taxable_amount + tax_amount
+                    st.info(f"📊 Item Total: {format_amount(item_total, st.session_state.currency)}")
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    if editing:
+                        if st.form_submit_button("✅ Update Item", use_container_width=True):
+                            if description and unit_price > 0:
+                                # Calculate amounts
+                                subtotal = quantity * unit_price
+                                discount_amount = subtotal * (discount / 100)
+                                taxable_amount = subtotal - discount_amount
+                                tax_amount = taxable_amount * (tax_rate / 100)
+                                total = taxable_amount + tax_amount
+                                
+                                # Update the item
+                                st.session_state.invoice_items[st.session_state.edit_index] = {
+                                    'description': description,
+                                    'quantity': quantity,
+                                    'unit_price': unit_price,
+                                    'tax_rate': tax_rate,
+                                    'discount': discount,
+                                    'subtotal': subtotal,
+                                    'discount_amount': discount_amount,
+                                    'tax_amount': tax_amount,
+                                    'total': total
+                                }
+                                # Reset edit mode
+                                st.session_state.edit_index = -1
+                                st.rerun()
+                    else:
+                        if st.form_submit_button("➕ Add Item", use_container_width=True):
+                            if description and unit_price > 0:
+                                # Calculate amounts
+                                subtotal = quantity * unit_price
+                                discount_amount = subtotal * (discount / 100)
+                                taxable_amount = subtotal - discount_amount
+                                tax_amount = taxable_amount * (tax_rate / 100)
+                                total = taxable_amount + tax_amount
+                                
+                                st.session_state.invoice_items.append({
+                                    'description': description,
+                                    'quantity': quantity,
+                                    'unit_price': unit_price,
+                                    'tax_rate': tax_rate,
+                                    'discount': discount,
+                                    'subtotal': subtotal,
+                                    'discount_amount': discount_amount,
+                                    'tax_amount': tax_amount,
+                                    'total': total
+                                })
+                                st.rerun()
+                
+                with col2:
+                    if editing:
+                        if st.form_submit_button("❌ Cancel Edit", use_container_width=True):
+                            st.session_state.edit_index = -1
+                            st.rerun()
             
-            # Display items
+            # Display items with edit/delete options
             if st.session_state.invoice_items:
                 st.markdown("##### Current Items")
                 
-                for idx, item in enumerate(st.session_state.invoice_items):
-                    cols = st.columns([4, 1, 1, 1])
-                    with cols[0]:
-                        st.write(f"**{item['description']}**")
-                        st.caption(f"Qty: {item['quantity']} × {format_amount(item['unit_price'], st.session_state.currency)}")
-                    with cols[1]:
-                        st.write(f"Tax: {item['tax_rate']}%")
-                    with cols[2]:
-                        st.write(f"Disc: {item['discount']}%")
-                    with cols[3]:
-                        st.write(f"**{format_amount(item['total'], st.session_state.currency)}**")
-                        if st.button("✖", key=f"del_{idx}"):
-                            st.session_state.invoice_items.pop(idx)
-                            st.rerun()
-                    st.divider()
+                # Create headers
+                col_desc, col_qty, col_price, col_tax, col_disc, col_total, col_actions = st.columns([3, 1, 1, 1, 1, 1, 1])
+                with col_desc:
+                    st.markdown("**Description**")
+                with col_qty:
+                    st.markdown("**Qty**")
+                with col_price:
+                    st.markdown("**Price**")
+                with col_tax:
+                    st.markdown("**Tax**")
+                with col_disc:
+                    st.markdown("**Disc**")
+                with col_total:
+                    st.markdown("**Total**")
+                with col_actions:
+                    st.markdown("**Actions**")
                 
-                # Calculate totals
+                # Display each item
+                for idx, item in enumerate(st.session_state.invoice_items):
+                    col_desc, col_qty, col_price, col_tax, col_disc, col_total, col_actions = st.columns([3, 1, 1, 1, 1, 1, 1])
+                    
+                    with col_desc:
+                        st.write(item['description'])
+                    with col_qty:
+                        st.write(item['quantity'])
+                    with col_price:
+                        st.write(format_amount(item['unit_price'], st.session_state.currency))
+                    with col_tax:
+                        st.write(f"{item['tax_rate']}%")
+                    with col_disc:
+                        st.write(f"{item['discount']}%")
+                    with col_total:
+                        st.write(f"**{format_amount(item['total'], st.session_state.currency)}**")
+                    with col_actions:
+                        col_edit, col_del = st.columns(2)
+                        with col_edit:
+                            if st.button("✏️", key=f"edit_{idx}", help="Edit item"):
+                                st.session_state.edit_index = idx
+                                st.rerun()
+                        with col_del:
+                            if st.button("🗑️", key=f"del_{idx}", help="Delete item"):
+                                st.session_state.invoice_items.pop(idx)
+                                if st.session_state.edit_index == idx:
+                                    st.session_state.edit_index = -1
+                                st.rerun()
+                
+                st.divider()
+                
+                # Calculate and display GRAND TOTAL prominently
                 subtotal = sum(item['subtotal'] for item in st.session_state.invoice_items)
                 total_discount = sum(item['discount_amount'] for item in st.session_state.invoice_items)
                 total_tax = sum(item['tax_amount'] for item in st.session_state.invoice_items)
                 grand_total = sum(item['total'] for item in st.session_state.invoice_items)
                 
-                # Summary
-                col_s1, col_s2, col_s3, col_s4 = st.columns(4)
-                with col_s1:
-                    st.metric("Subtotal", format_amount(subtotal, st.session_state.currency))
-                with col_s2:
-                    st.metric("Discount", format_amount(total_discount, st.session_state.currency))
-                with col_s3:
-                    st.metric("Tax", format_amount(total_tax, st.session_state.currency))
-                with col_s4:
-                    st.metric("Total", format_amount(grand_total, st.session_state.currency))
+                # Display totals in a clean format
+                st.markdown("### 📊 Invoice Summary")
                 
-                if st.button("Clear All Items", use_container_width=True):
-                    st.session_state.invoice_items = []
-                    st.rerun()
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.markdown(f"""
+                    <div style="background: #f8fafc; padding: 1rem; border-radius: 8px; border: 1px solid #e2e8f0;">
+                        <p style="margin: 0; color: #475569;">Subtotal:</p>
+                        <p style="font-size: 1.2rem; font-weight: 600; margin: 0; color: #0f172a;">{format_amount(subtotal, st.session_state.currency)}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    st.markdown(f"""
+                    <div style="background: #f8fafc; padding: 1rem; border-radius: 8px; border: 1px solid #e2e8f0; margin-top: 0.5rem;">
+                        <p style="margin: 0; color: #475569;">Discount:</p>
+                        <p style="font-size: 1.2rem; font-weight: 600; margin: 0; color: #dc2626;">-{format_amount(total_discount, st.session_state.currency)}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                with col2:
+                    st.markdown(f"""
+                    <div style="background: #f8fafc; padding: 1rem; border-radius: 8px; border: 1px solid #e2e8f0;">
+                        <p style="margin: 0; color: #475569;">Tax:</p>
+                        <p style="font-size: 1.2rem; font-weight: 600; margin: 0; color: #0f172a;">{format_amount(total_tax, st.session_state.currency)}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    st.markdown(f"""
+                    <div style="background: #1e40af; padding: 1rem; border-radius: 8px; border: 1px solid #1e3a8a; margin-top: 0.5rem;">
+                        <p style="margin: 0; color: #e2e8f0; font-weight: 500;">GRAND TOTAL:</p>
+                        <p style="font-size: 1.8rem; font-weight: 700; margin: 0; color: white;">{format_amount(grand_total, st.session_state.currency)}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                # Quick actions
+                col_reset, col_update = st.columns(2)
+                with col_reset:
+                    if st.button("🔄 Reset All Items", use_container_width=True):
+                        st.session_state.invoice_items = []
+                        st.session_state.edit_index = -1
+                        st.rerun()
+                with col_update:
+                    if st.button("📊 Recalculate All", use_container_width=True):
+                        # Recalculate all items to ensure accuracy
+                        updated_items = []
+                        for item in st.session_state.invoice_items:
+                            subtotal = item['quantity'] * item['unit_price']
+                            discount_amount = subtotal * (item['discount'] / 100)
+                            taxable_amount = subtotal - discount_amount
+                            tax_amount = taxable_amount * (item['tax_rate'] / 100)
+                            total = taxable_amount + tax_amount
+                            
+                            item['subtotal'] = subtotal
+                            item['discount_amount'] = discount_amount
+                            item['tax_amount'] = tax_amount
+                            item['total'] = total
+                            updated_items.append(item)
+                        
+                        st.session_state.invoice_items = updated_items
+                        st.success("✅ All items recalculated!")
+                        st.rerun()
+            else:
+                st.info("No items added yet. Use the form above to add items.")
             
             st.markdown('</div>', unsafe_allow_html=True)
     
-    # Preview section - FIXED to prevent code display
+    # Preview section
     if st.session_state.invoice_items and client_name:
         st.markdown('<div class="section-header">👁️ Invoice Preview</div>', unsafe_allow_html=True)
         
@@ -1276,6 +1471,7 @@ if st.session_state.current_page == "create":
                 
                 if st.button("🔄 New Invoice", use_container_width=True):
                     st.session_state.invoice_items = []
+                    st.session_state.edit_index = -1
                     st.session_state.invoice_number = f"INV-{datetime.now().strftime('%Y%m')}-{datetime.now().strftime('%d')}"
                     st.rerun()
                 
