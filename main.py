@@ -1,4 +1,4 @@
-# app.py (Complete updated version)
+# app.py (Complete updated version with fixed tabs)
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
@@ -90,7 +90,7 @@ FIXED_RATES = {
 }
 
 # ============================================================================
-# PROFESSIONAL CSS - FIXED FOR VISIBILITY
+# PROFESSIONAL CSS - FIXED TAB VISIBILITY
 # ============================================================================
 
 st.markdown("""
@@ -103,11 +103,6 @@ st.markdown("""
         font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
         background-color: #f8fafc;
         color: #1e293b;
-    }
-    
-    /* Force all text to be dark by default */
-    .stMarkdown, .stText, p, li, span, div {
-        color: #1e293b !important;
     }
     
     /* Headers */
@@ -145,11 +140,7 @@ st.markdown("""
         box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         border: 1px solid #e2e8f0;
         margin-bottom: 1.5rem;
-    }
-    
-    /* Ensure all text inside business-card is dark */
-    .business-card * {
-        color: #1e293b !important;
+        color: #1e293b;
     }
     
     /* Section headers */
@@ -162,12 +153,12 @@ st.markdown("""
         border-bottom: 1px solid #e2e8f0;
     }
     
-    /* TABS - FIXED FOR VISIBILITY */
+    /* TABS - COMPLETELY FIXED FOR VISIBILITY */
     .stTabs [data-baseweb="tab-list"] {
-        gap: 2rem;
-        background-color: #ffffff;
-        padding: 0.75rem;
-        border-radius: 8px;
+        gap: 0.5rem;
+        background-color: #f1f5f9;
+        padding: 0.5rem;
+        border-radius: 10px;
         border: 1px solid #e2e8f0;
         margin-bottom: 1.5rem;
     }
@@ -177,21 +168,23 @@ st.markdown("""
         font-weight: 500;
         font-size: 1rem;
         background-color: transparent;
-        border-radius: 6px;
-        padding: 0.5rem 1rem;
-        transition: all 0.2s;
+        border-radius: 8px;
+        padding: 0.5rem 1.2rem;
+        transition: all 0.2s ease;
+        border: none;
+        opacity: 1 !important;
     }
     
     .stTabs [data-baseweb="tab"]:hover {
         color: #0f172a !important;
-        background-color: #f1f5f9;
+        background-color: #e2e8f0;
     }
     
     .stTabs [aria-selected="true"] {
         color: #ffffff !important;  /* White text for active tab */
-        background-color: #0f172a !important;  /* Dark background for active tab */
+        background-color: #0f172a !important;  /* Dark navy background */
         font-weight: 600;
-        border-radius: 6px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
     
     /* Tab content */
@@ -201,8 +194,13 @@ st.markdown("""
         padding: 1rem 0;
     }
     
-    .stTabs [data-baseweb="tab-panel"] * {
-        color: #1e293b !important;
+    /* Force all text in tabs to be visible */
+    .stTabs [data-baseweb="tab"] div {
+        color: inherit !important;
+    }
+    
+    .stTabs [data-baseweb="tab"] p {
+        color: inherit !important;
     }
     
     /* Logo styling */
@@ -261,15 +259,6 @@ st.markdown("""
         box-shadow: 0 0 0 2px rgba(15,23,42,0.1) !important;
     }
     
-    /* Selectbox specific */
-    .stSelectbox div[data-baseweb="select"] {
-        color: #1e293b !important;
-    }
-    
-    .stSelectbox div[data-baseweb="select"] span {
-        color: #1e293b !important;
-    }
-    
     /* Button styling */
     .stButton > button {
         font-family: 'Inter', sans-serif;
@@ -319,10 +308,6 @@ st.markdown("""
         color: #1e293b !important;
     }
     
-    .dataframe {
-        color: #1e293b !important;
-    }
-    
     .dataframe th {
         background-color: #f1f5f9;
         color: #0f172a !important;
@@ -343,6 +328,7 @@ st.markdown("""
         border-radius: 6px;
         font-weight: 500;
         padding: 0.5rem 1rem;
+        border: 1px solid #e2e8f0;
     }
     
     .streamlit-expanderHeader:hover {
@@ -359,33 +345,32 @@ st.markdown("""
     }
     
     /* Alert messages */
-    .stAlert {
-        color: #1e293b !important;
-        border-radius: 6px;
-    }
-    
     .stSuccess {
         background-color: #dcfce7;
         color: #166534 !important;
         border: 1px solid #86efac;
+        border-radius: 6px;
     }
     
     .stWarning {
         background-color: #fef9c3;
         color: #854d0e !important;
         border: 1px solid #fde047;
+        border-radius: 6px;
     }
     
     .stError {
         background-color: #fee2e2;
         color: #991b1b !important;
         border: 1px solid #fecaca;
+        border-radius: 6px;
     }
     
     .stInfo {
         background-color: #dbeafe;
         color: #1e40af !important;
         border: 1px solid #bfdbfe;
+        border-radius: 6px;
     }
     
     /* Invoice preview */
@@ -394,6 +379,7 @@ st.markdown("""
         border-radius: 12px;
         padding: 2rem;
         border: 1px solid #e2e8f0;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.02);
     }
     
     .invoice-preview * {
@@ -425,11 +411,13 @@ st.markdown("""
         font-size: 2rem;
         font-weight: 600;
         color: #0f172a !important;
+        letter-spacing: -0.02em;
     }
     
     .company-details {
         text-align: right;
         color: #475569 !important;
+        line-height: 1.5;
     }
     
     /* Sidebar */
@@ -448,6 +436,7 @@ st.markdown("""
         border: 1px solid #e2e8f0;
         text-align: left;
         justify-content: flex-start;
+        margin-bottom: 0.25rem;
     }
     
     section[data-testid="stSidebar"] .stButton > button:hover {
@@ -521,6 +510,7 @@ st.markdown("""
         background-color: white;
         border: 1px solid #e2e8f0;
         border-radius: 6px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
     }
     
     div[role="listbox"] li {
@@ -535,6 +525,62 @@ st.markdown("""
     div[role="listbox"] li[aria-selected="true"] {
         background-color: #e2e8f0 !important;
         font-weight: 600;
+    }
+    
+    /* Number input spin buttons */
+    .stNumberInput button {
+        background-color: #f1f5f9 !important;
+        border: 1px solid #cbd5e1 !important;
+        color: #1e293b !important;
+    }
+    
+    .stNumberInput button:hover {
+        background-color: #e2e8f0 !important;
+    }
+    
+    /* Horizontal rule */
+    hr {
+        border-color: #e2e8f0 !important;
+        margin: 1.5rem 0;
+    }
+    
+    /* Code blocks */
+    code {
+        color: #0f172a !important;
+        background-color: #f1f5f9 !important;
+        border-radius: 4px;
+        padding: 0.2rem 0.4rem;
+        border: 1px solid #e2e8f0;
+    }
+    
+    /* Tooltips */
+    .stTooltip {
+        background-color: #0f172a !important;
+        color: white !important;
+        border-radius: 4px;
+        padding: 0.25rem 0.5rem;
+        font-size: 0.8rem;
+    }
+    
+    /* Loading spinner */
+    .stSpinner {
+        color: #0f172a !important;
+    }
+    
+    /* Progress bar */
+    .stProgress > div > div {
+        background-color: #0f172a !important;
+    }
+    
+    /* Date input calendar icon */
+    .stDateInput button {
+        color: #1e293b !important;
+    }
+    
+    /* Select box arrow */
+    .stSelectbox svg {
+        color: #1e293b !important;
+        fill: #1e293b !important;
     }
     </style>
 """, unsafe_allow_html=True)
