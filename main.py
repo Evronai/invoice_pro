@@ -1,4 +1,4 @@
-# app.py (Complete final version with item editing and grand total)
+# app.py (Fixed version with working preview and PDF)
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
@@ -107,7 +107,6 @@ st.markdown("""
     .stApp {
         font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
         background-color: #f8fafc;
-        color: #1e293b;
     }
     
     /* Headers */
@@ -145,7 +144,6 @@ st.markdown("""
         box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         border: 1px solid #e2e8f0;
         margin-bottom: 1.5rem;
-        color: #1e293b;
     }
     
     /* Section headers */
@@ -241,16 +239,34 @@ st.markdown("""
     }
     
     /* Danger/Remove buttons - red */
-    .stButton > button[key*="remove"] {
+    .stButton > button[key*="remove"],
+    .stButton > button[key*="del"] {
         background: white;
         color: #dc2626 !important;
         border: 2px solid #dc2626;
+        padding: 0.25rem 0.5rem;
+        font-size: 0.9rem;
     }
     
-    .stButton > button[key*="remove"]:hover {
+    .stButton > button[key*="remove"]:hover,
+    .stButton > button[key*="del"]:hover {
         background: #fee2e2;
         border-color: #b91c1c;
         color: #b91c1c !important;
+    }
+    
+    /* Edit buttons - orange */
+    .stButton > button[key*="edit"] {
+        background: white;
+        color: #ea580c !important;
+        border: 2px solid #ea580c;
+        padding: 0.25rem 0.5rem;
+        font-size: 0.9rem;
+    }
+    
+    .stButton > button[key*="edit"]:hover {
+        background: #fff7ed;
+        border-color: #c2410c;
     }
     
     /* Success/Save buttons - green */
@@ -310,18 +326,6 @@ st.markdown("""
         border-color: #4b5563;
     }
     
-    /* Cancel button - orange */
-    .stButton > button:has(span:contains("Cancel")) {
-        background: white;
-        color: #ea580c !important;
-        border: 2px solid #ea580c;
-    }
-    
-    .stButton > button:has(span:contains("Cancel")):hover {
-        background: #fff7ed;
-        border-color: #c2410c;
-    }
-    
     /* Sidebar buttons */
     section[data-testid="stSidebar"] .stButton > button {
         background: white;
@@ -366,6 +370,12 @@ st.markdown("""
         margin: 1rem 0;
     }
     
+    .invoice-logo {
+        max-height: 60px;
+        max-width: 150px;
+        object-fit: contain;
+    }
+    
     /* Form labels */
     .stTextInput label,
     .stNumberInput label,
@@ -394,15 +404,6 @@ st.markdown("""
         padding: 0.5rem !important;
     }
     
-    .stTextInput input:focus,
-    .stNumberInput input:focus,
-    .stDateInput input:focus,
-    .stSelectbox select:focus,
-    .stTextArea textarea:focus {
-        border-color: #2563eb !important;
-        box-shadow: 0 0 0 3px rgba(37,99,235,0.1) !important;
-    }
-    
     /* Metric containers */
     div[data-testid="metric-container"] {
         background: white;
@@ -411,30 +412,9 @@ st.markdown("""
         padding: 1rem;
     }
     
-    div[data-testid="metric-container"] label {
-        color: #475569 !important;
-    }
-    
-    div[data-testid="metric-container"] div {
-        color: #0f172a !important;
-    }
-    
     /* DataFrame/Table styling */
     .stDataFrame {
         color: #1e293b !important;
-    }
-    
-    .dataframe th {
-        background-color: #f1f5f9;
-        color: #0f172a !important;
-        font-weight: 600;
-        padding: 0.75rem;
-    }
-    
-    .dataframe td {
-        color: #1e293b !important;
-        padding: 0.75rem;
-        border-bottom: 1px solid #e2e8f0;
     }
     
     /* Expanders */
@@ -445,19 +425,6 @@ st.markdown("""
         font-weight: 500;
         padding: 0.5rem 1rem;
         border: 1px solid #e2e8f0;
-    }
-    
-    .streamlit-expanderHeader:hover {
-        background-color: #f1f5f9;
-    }
-    
-    .streamlit-expanderContent {
-        color: #1e293b !important;
-        background-color: white;
-        border: 1px solid #e2e8f0;
-        border-top: none;
-        border-radius: 0 0 6px 6px;
-        padding: 1rem;
     }
     
     /* Alert messages */
@@ -496,6 +463,8 @@ st.markdown("""
         padding: 2rem;
         border: 1px solid #e2e8f0;
         box-shadow: 0 4px 6px rgba(0,0,0,0.02);
+        margin-top: 1rem;
+        margin-bottom: 2rem;
     }
     
     .invoice-preview * {
@@ -517,12 +486,6 @@ st.markdown("""
         gap: 1rem;
     }
     
-    .invoice-logo {
-        max-height: 60px;
-        max-width: 150px;
-        object-fit: contain;
-    }
-    
     .invoice-title {
         font-size: 2rem;
         font-weight: 600;
@@ -536,6 +499,65 @@ st.markdown("""
         line-height: 1.5;
     }
     
+    /* Preview table */
+    .preview-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 1rem 0;
+    }
+    
+    .preview-table th {
+        background: #f8fafc;
+        padding: 0.75rem;
+        text-align: left;
+        border-bottom: 2px solid #e2e8f0;
+        font-weight: 600;
+    }
+    
+    .preview-table td {
+        padding: 0.75rem;
+        border-bottom: 1px solid #e2e8f0;
+    }
+    
+    .preview-table tr:last-child td {
+        border-bottom: none;
+    }
+    
+    .preview-table .amount {
+        text-align: right;
+    }
+    
+    /* Totals table */
+    .totals-table {
+        width: 300px;
+        margin-left: auto;
+    }
+    
+    .totals-table td {
+        padding: 0.25rem 0.5rem;
+    }
+    
+    .totals-table .total-row {
+        border-top: 2px solid #e2e8f0;
+        font-weight: 600;
+        font-size: 1.1rem;
+    }
+    
+    /* Grand total highlight */
+    .grand-total {
+        background: #1e40af;
+        padding: 1rem;
+        border-radius: 8px;
+        color: white !important;
+        font-weight: 700;
+        font-size: 1.5rem;
+        margin-top: 1rem;
+    }
+    
+    .grand-total * {
+        color: white !important;
+    }
+    
     /* Sidebar */
     section[data-testid="stSidebar"] {
         background-color: white;
@@ -544,30 +566,6 @@ st.markdown("""
     
     section[data-testid="stSidebar"] * {
         color: #1e293b !important;
-    }
-    
-    section[data-testid="stSidebar"] .stButton > button {
-        background: white;
-        color: #2563eb !important;
-        border: 2px solid #2563eb;
-        text-align: left;
-        justify-content: flex-start;
-        margin-bottom: 0.25rem;
-    }
-    
-    section[data-testid="stSidebar"] .stButton > button:hover {
-        background: #eff6ff;
-        border-color: #1d4ed8;
-    }
-    
-    section[data-testid="stSidebar"] .stButton > button[kind="primary"] {
-        background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
-        color: white !important;
-        border: none;
-    }
-    
-    section[data-testid="stSidebar"] .stButton > button[kind="primary"]:hover {
-        background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%);
     }
     
     /* Footer */
@@ -581,25 +579,12 @@ st.markdown("""
         background: white;
     }
     
-    .app-footer p {
-        color: #64748b !important;
-    }
-    
     /* File uploader */
-    .stFileUploader {
-        margin-bottom: 1rem;
-    }
-    
     .stFileUploader > div {
         border: 1px dashed #cbd5e1;
         border-radius: 6px;
         padding: 1rem;
         background: #f8fafc;
-    }
-    
-    .stFileUploader > div:hover {
-        background: #f1f5f9;
-        border-color: #94a3b8;
     }
     
     /* Download links */
@@ -612,93 +597,71 @@ st.markdown("""
     a:hover {
         text-decoration: underline;
     }
-    
-    /* Placeholder text */
-    input::placeholder, textarea::placeholder {
-        color: #94a3b8 !important;
-        opacity: 1;
-        font-style: italic;
-    }
-    
-    /* Dropdown menu items */
-    div[role="listbox"] {
-        background-color: white;
-        border: 1px solid #e2e8f0;
-        border-radius: 6px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-    }
-    
-    div[role="listbox"] li {
-        color: #1e293b !important;
-        padding: 0.5rem 1rem;
-    }
-    
-    div[role="listbox"] li:hover {
-        background-color: #f1f5f9 !important;
-    }
-    
-    div[role="listbox"] li[aria-selected="true"] {
-        background-color: #e2e8f0 !important;
-        font-weight: 600;
-    }
-    
-    /* Hide any raw code that might appear */
-    pre, code {
-        display: none !important;
-    }
     </style>
 """, unsafe_allow_html=True)
 
 # ============================================================================
-# PDF GENERATION FUNCTIONS
+# FIXED PDF GENERATION FUNCTIONS
 # ============================================================================
 
 def generate_pdf_invoice(invoice_data):
-    """Generate PDF invoice"""
+    """Generate PDF invoice - FIXED ALIGNMENT"""
     if not PDF_AVAILABLE:
         return None
     
     try:
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=A4,
-                               rightMargin=72, leftMargin=72,
-                               topMargin=72, bottomMargin=18)
+                               rightMargin=36, leftMargin=36,  # Reduced margins
+                               topMargin=36, bottomMargin=36)
         
         styles = getSampleStyleSheet()
         story = []
         
-        # Title
+        # Custom styles
         title_style = ParagraphStyle(
             'CustomTitle',
             parent=styles['Heading1'],
             fontSize=24,
             textColor=colors.HexColor('#0f172a'),
             alignment=TA_CENTER,
-            spaceAfter=30
+            spaceAfter=20
         )
-        story.append(Paragraph("INVOICE", title_style))
-        story.append(Spacer(1, 20))
         
-        # Company info
+        normal_style = ParagraphStyle(
+            'CustomNormal',
+            parent=styles['Normal'],
+            fontSize=10,
+            leading=14
+        )
+        
+        # Company and Invoice Header
         company = invoice_data.get('company_info', {})
-        company_text = f"""
-        <b>{company.get('name', '')}</b><br/>
-        {company.get('address', '')}<br/>
-        {company.get('city', '')}<br/>
-        Phone: {company.get('phone', '')}<br/>
-        Email: {company.get('email', '')}
-        """
-        story.append(Paragraph(company_text, styles['Normal']))
-        story.append(Spacer(1, 20))
         
-        # Invoice details
-        invoice_details = f"""
-        <b>Invoice Number:</b> {invoice_data.get('invoice_number', '')}<br/>
-        <b>Date:</b> {invoice_data.get('invoice_date', '')}<br/>
-        <b>Due Date:</b> {invoice_data.get('due_date', '')}<br/>
-        <b>PO Number:</b> {invoice_data.get('po_number', 'N/A')}
-        """
-        story.append(Paragraph(invoice_details, styles['Normal']))
+        # Create header table
+        header_data = [
+            [Paragraph(f"<b>{company.get('name', '')}</b>", normal_style),
+             Paragraph(f"<b>INVOICE</b>", title_style)],
+            [Paragraph(company.get('address', ''), normal_style),
+             Paragraph(f"<b>#{invoice_data.get('invoice_number', '')}</b>", normal_style)],
+            [Paragraph(company.get('city', ''), normal_style),
+             Paragraph(f"Date: {invoice_data.get('invoice_date', '')}", normal_style)],
+            [Paragraph(f"Phone: {company.get('phone', '')}", normal_style),
+             Paragraph(f"Due: {invoice_data.get('due_date', '')}", normal_style)],
+            [Paragraph(f"Email: {company.get('email', '')}", normal_style),
+             Paragraph(f"PO: {invoice_data.get('po_number', 'N/A')}", normal_style)]
+        ]
+        
+        header_table = Table(header_data, colWidths=[3*inch, 3*inch])
+        header_table.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+            ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+            ('TEXTCOLOR', (0, 0), (-1, -1), colors.HexColor('#1e293b')),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ]))
+        story.append(header_table)
         story.append(Spacer(1, 20))
         
         # Client info
@@ -707,59 +670,104 @@ def generate_pdf_invoice(invoice_data):
         <b>Bill To:</b><br/>
         {client.get('name', '')}<br/>
         {client.get('address', '')}<br/>
-        Email: {client.get('email', '')}
+        {client.get('email', '')}
         """
-        story.append(Paragraph(client_text, styles['Normal']))
+        story.append(Paragraph(client_text, normal_style))
         story.append(Spacer(1, 20))
         
-        # Items table
+        # Items table - FIXED FORMATTING
         if 'items' in invoice_data and invoice_data['items']:
-            table_data = [['Description', 'Qty', 'Price', 'Tax %', 'Total']]
+            # Prepare table data
+            table_data = [['Description', 'Qty', 'Unit Price', 'Tax %', 'Discount %', 'Total']]
+            
+            currency = invoice_data.get('currency', 'TTD')
+            symbol = get_currency_symbol(currency)
             
             for item in invoice_data['items']:
-                currency = invoice_data.get('currency', 'TTD')
-                symbol = get_currency_symbol(currency)
                 table_data.append([
-                    item.get('description', ''),
+                    Paragraph(item.get('description', ''), normal_style),
                     str(item.get('quantity', '')),
                     f"{symbol}{item.get('unit_price', 0):,.2f}",
                     f"{item.get('tax_rate', 0)}%",
+                    f"{item.get('discount', 0)}%",
                     f"{symbol}{item.get('total', 0):,.2f}"
                 ])
             
-            # Add totals row
-            totals = invoice_data.get('totals', {})
-            table_data.append(['', '', '', 'Subtotal:', f"{symbol}{totals.get('subtotal', 0):,.2f}"])
-            table_data.append(['', '', '', 'Tax:', f"{symbol}{totals.get('tax', 0):,.2f}"])
-            table_data.append(['', '', '', 'Discount:', f"-{symbol}{totals.get('discount', 0):,.2f}"])
-            table_data.append(['', '', '', 'Grand Total:', f"{symbol}{totals.get('grand_total', 0):,.2f}"])
+            # Create table with proper column widths
+            col_widths = [2.5*inch, 0.5*inch, 0.8*inch, 0.5*inch, 0.5*inch, 1*inch]
+            table = Table(table_data, colWidths=col_widths, repeatRows=1)
             
-            table = Table(table_data)
+            # Table styling
             table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                # Header
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2563eb')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
                 ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
                 ('FONTSIZE', (0, 0), (-1, 0), 10),
-                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-                ('BACKGROUND', (0, 1), (-1, -4), colors.beige),
-                ('GRID', (0, 0), (-1, -4), 1, colors.black),
-                ('FONTNAME', (-2, -4), (-1, -1), 'Helvetica-Bold'),
-                ('BACKGROUND', (-2, -4), (-1, -1), colors.lightgrey),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+                
+                # Body
+                ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+                ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#1e293b')),
+                ('ALIGN', (1, 1), (1, -1), 'CENTER'),  # Qty centered
+                ('ALIGN', (2, 1), (5, -1), 'RIGHT'),   # Amounts right-aligned
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('FONTSIZE', (0, 1), (-1, -1), 9),
+                ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#e2e8f0')),
+                ('BOX', (0, 0), (-1, -1), 2, colors.HexColor('#2563eb')),
             ]))
+            
             story.append(table)
+            story.append(Spacer(1, 20))
+            
+            # Totals section
+            totals = invoice_data.get('totals', {})
+            subtotal = totals.get('subtotal', 0)
+            discount = totals.get('discount', 0)
+            tax = totals.get('tax', 0)
+            grand_total = totals.get('grand_total', 0)
+            
+            # Create totals table
+            totals_data = [
+                ['Subtotal:', f"{symbol}{subtotal:,.2f}"],
+                ['Discount:', f"-{symbol}{discount:,.2f}"],
+                ['Tax:', f"{symbol}{tax:,.2f}"],
+                ['Grand Total:', f"{symbol}{grand_total:,.2f}"]
+            ]
+            
+            totals_table = Table(totals_data, colWidths=[1.5*inch, 1.5*inch])
+            totals_table.setStyle(TableStyle([
+                ('ALIGN', (0, 0), (0, -1), 'RIGHT'),
+                ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+                ('FONTNAME', (0, -1), (1, -1), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, -1), (1, -1), 12),
+                ('LINEABOVE', (0, -1), (1, -1), 2, colors.HexColor('#2563eb')),
+                ('BACKGROUND', (0, -1), (1, -1), colors.HexColor('#f0f9ff')),
+                ('TEXTCOLOR', (0, -1), (1, -1), colors.HexColor('#0f172a')),
+            ]))
+            
+            # Add totals table aligned to right
+            story.append(Table([[totals_table]], colWidths=[6.5*inch]))
             story.append(Spacer(1, 20))
         
         # Payment details
         if company.get('bank_details'):
-            story.append(Paragraph("<b>Payment Details:</b>", styles['Normal']))
-            story.append(Paragraph(company['bank_details'], styles['Normal']))
+            story.append(Paragraph("<b>Payment Details:</b>", normal_style))
+            story.append(Paragraph(company['bank_details'], normal_style))
             story.append(Spacer(1, 20))
         
         # Footer
-        footer_text = "Thank you for your business!"
-        story.append(Paragraph(footer_text, styles['Italic']))
+        footer_style = ParagraphStyle(
+            'Footer',
+            parent=styles['Italic'],
+            fontSize=9,
+            textColor=colors.HexColor('#64748b'),
+            alignment=TA_CENTER
+        )
+        story.append(Paragraph("Thank you for your business!", footer_style))
         
+        # Build PDF
         doc.build(story)
         buffer.seek(0)
         return buffer
@@ -1252,7 +1260,7 @@ if st.session_state.current_page == "create":
                     """, unsafe_allow_html=True)
                     
                     st.markdown(f"""
-                    <div style="background: #1e40af; padding: 1rem; border-radius: 8px; border: 1px solid #1e3a8a; margin-top: 0.5rem;">
+                    <div class="grand-total">
                         <p style="margin: 0; color: #e2e8f0; font-weight: 500;">GRAND TOTAL:</p>
                         <p style="font-size: 1.8rem; font-weight: 700; margin: 0; color: white;">{format_amount(grand_total, st.session_state.currency)}</p>
                     </div>
@@ -1290,7 +1298,7 @@ if st.session_state.current_page == "create":
             
             st.markdown('</div>', unsafe_allow_html=True)
     
-    # Preview section
+    # Preview section - FIXED
     if st.session_state.invoice_items and client_name:
         st.markdown('<div class="section-header">👁️ Invoice Preview</div>', unsafe_allow_html=True)
         
@@ -1306,7 +1314,7 @@ if st.session_state.current_page == "create":
             total_tax = sum(item['tax_amount'] for item in st.session_state.invoice_items)
             grand_total = sum(item['total'] for item in st.session_state.invoice_items)
             
-            # Build the preview HTML as a single string
+            # Build preview HTML - FIXED ESCAPING
             preview_html = f'''
             <div class="invoice-preview">
                 <div class="invoice-header">
@@ -1340,53 +1348,55 @@ if st.session_state.current_page == "create":
                     </div>
                 </div>
                 
-                <table style="width: 100%; border-collapse: collapse;">
+                <table class="preview-table">
                     <thead>
-                        <tr style="background: #f8fafc; border-bottom: 2px solid #e2e8f0;">
-                            <th style="padding: 0.75rem; text-align: left;">Description</th>
-                            <th style="padding: 0.75rem; text-align: right;">Qty</th>
-                            <th style="padding: 0.75rem; text-align: right;">Price</th>
-                            <th style="padding: 0.75rem; text-align: right;">Tax</th>
-                            <th style="padding: 0.75rem; text-align: right;">Total</th>
+                        <tr>
+                            <th>Description</th>
+                            <th class="amount">Qty</th>
+                            <th class="amount">Price</th>
+                            <th class="amount">Tax</th>
+                            <th class="amount">Disc</th>
+                            <th class="amount">Total</th>
                         </tr>
                     </thead>
                     <tbody>
             '''
             
-            # Add items rows
+            # Add items
             for item in st.session_state.invoice_items:
                 preview_html += f'''
-                        <tr style="border-bottom: 1px solid #e2e8f0;">
-                            <td style="padding: 0.75rem;">{item['description']}</td>
-                            <td style="padding: 0.75rem; text-align: right;">{item['quantity']}</td>
-                            <td style="padding: 0.75rem; text-align: right;">{format_amount(item['unit_price'], st.session_state.currency)}</td>
-                            <td style="padding: 0.75rem; text-align: right;">{item['tax_rate']}%</td>
-                            <td style="padding: 0.75rem; text-align: right;">{format_amount(item['total'], st.session_state.currency)}</td>
+                        <tr>
+                            <td>{item['description']}</td>
+                            <td class="amount">{item['quantity']}</td>
+                            <td class="amount">{format_amount(item['unit_price'], st.session_state.currency)}</td>
+                            <td class="amount">{item['tax_rate']}%</td>
+                            <td class="amount">{item['discount']}%</td>
+                            <td class="amount">{format_amount(item['total'], st.session_state.currency)}</td>
                         </tr>
                 '''
             
-            # Add footer with totals
+            # Add totals
             preview_html += f'''
                     </tbody>
                 </table>
                 
                 <div style="margin-top: 2rem; display: flex; justify-content: flex-end;">
-                    <table style="width: 300px;">
+                    <table class="totals-table">
                         <tr>
-                            <td style="padding: 0.25rem;">Subtotal:</td>
-                            <td style="padding: 0.25rem; text-align: right;">{format_amount(subtotal, st.session_state.currency)}</td>
+                            <td>Subtotal:</td>
+                            <td class="amount">{format_amount(subtotal, st.session_state.currency)}</td>
                         </tr>
                         <tr>
-                            <td style="padding: 0.25rem;">Discount:</td>
-                            <td style="padding: 0.25rem; text-align: right;">-{format_amount(total_discount, st.session_state.currency)}</td>
+                            <td>Discount:</td>
+                            <td class="amount">-{format_amount(total_discount, st.session_state.currency)}</td>
                         </tr>
                         <tr>
-                            <td style="padding: 0.25rem;">Tax:</td>
-                            <td style="padding: 0.25rem; text-align: right;">{format_amount(total_tax, st.session_state.currency)}</td>
+                            <td>Tax:</td>
+                            <td class="amount">{format_amount(total_tax, st.session_state.currency)}</td>
                         </tr>
-                        <tr style="border-top: 2px solid #e2e8f0;">
-                            <td style="padding: 0.5rem 0.25rem; font-weight: 600;">Total:</td>
-                            <td style="padding: 0.5rem 0.25rem; text-align: right; font-weight: 600; font-size: 1.2rem;">{format_amount(grand_total, st.session_state.currency)}</td>
+                        <tr class="total-row">
+                            <td>Grand Total:</td>
+                            <td class="amount">{format_amount(grand_total, st.session_state.currency)}</td>
                         </tr>
                     </table>
                 </div>
@@ -1398,7 +1408,7 @@ if st.session_state.current_page == "create":
             </div>
             '''
             
-            # Display the preview
+            # Display preview
             st.markdown(preview_html, unsafe_allow_html=True)
         
         with preview_col2:
@@ -1424,7 +1434,7 @@ if st.session_state.current_page == "create":
                     except Exception as e:
                         st.error(f"Error saving: {e}")
                 
-                # PDF Generation
+                # PDF Generation - FIXED
                 if PDF_AVAILABLE:
                     if st.button("📄 Download PDF", use_container_width=True):
                         with st.spinner("Generating PDF..."):
@@ -1453,7 +1463,7 @@ if st.session_state.current_page == "create":
                             pdf_buffer = generate_pdf_invoice(invoice_data)
                             if pdf_buffer:
                                 b64 = base64.b64encode(pdf_buffer.getvalue()).decode()
-                                href = f'<a href="data:application/pdf;base64,{b64}" download="invoice_{invoice_number}.pdf" style="display: inline-block; padding: 0.5rem 1rem; background: #2563eb; color: white; text-decoration: none; border-radius: 6px; margin-top: 0.5rem;">Click to Download PDF</a>'
+                                href = f'<a href="data:application/pdf;base64,{b64}" download="invoice_{invoice_number}.pdf" style="display: inline-block; padding: 0.5rem 1rem; background: #2563eb; color: white; text-decoration: none; border-radius: 6px; margin-top: 0.5rem; text-align: center;">📥 Download PDF</a>'
                                 st.markdown(href, unsafe_allow_html=True)
                                 st.success("PDF generated successfully!")
                             else:
