@@ -524,6 +524,184 @@ def process_payment(invoice_id, amount, method='Bank Transfer', reference='', no
         logger.error(f"Payment error: {e}")
         return False, str(e)
 
+def update_invoice_status(invoice_id, new_status):
+    """Update invoice status"""
+    try:
+        with get_db_connection() as conn:
+            c = conn.cursor()
+            
+            update_fields = {'status': new_status, 'updated_at': datetime.now().isoformat()}
+            
+            if new_status == 'Sent':
+                update_fields['sent_date'] = datetime.now().isoformat()
+            elif new_status == 'Paid':
+                update_fields['paid_date'] = datetime.now().isoformat()
+            
+            set_clause = ', '.join([f"{k} = ?" for k in update_fields.keys()])
+            values = list(update_fields.values()) + [invoice_id]
+            
+            c.execute(f"UPDATE invoices SET {set_clause} WHERE id = ?", values)
+            conn.commit()
+            
+            # Log action
+            log_action(1, 'UPDATE_STATUS', f"Updated invoice {invoice_id} status to {new_status}")
+            
+            return True
+    except Exception as e:
+        logger.error(f"Update status error: {e}")
+        return False
+
+def get_invoices(filters=None):
+    """Get invoices with optional filters"""
+    try:
+        with get_db_connection() as conn:
+            query = "SELECT * FROM invoices"
+            params = []
+            
+            if filters:
+                conditions = []
+                if 'status' in filters and filters['status']:
+                    conditions.append("status = ?")
+                    params.append(filters['status'])
+                if 'client_name' in filters and filters['client_name']:
+                    conditions.append("client_name LIKE ?")
+                    params.append(f"%{filters['client_name']}%")
+                if 'date_from' in filters and filters['date_from']:
+                    conditions.append("invoice_date >= ?")
+                    params.append(filters['date_from'])
+                if 'date_to' in filters and filters['date_to']:
+                    conditions.append("invoice_date <= ?")
+                    params.append(filters['date_to'])
+                
+                if conditions:
+                    query += " WHERE " + " AND ".join(conditions)
+            
+            query += " ORDER BY created_at DESC"
+            
+            df = pd.read_sql_query(query, conn, params=params)
+            return df
+    except Exception as e:
+        logger.error(f"Get invoices error: {e}")
+        return pd.DataFrame()
+
+def get_invoice_by_id(invoice_id):
+    """Get invoice details by ID"""
+    try:
+        with get_db_connection() as conn:
+            # Get invoice
+            invoice_df = pd.read_sql_query(
+                "SELECT * FROM invoices WHERE id = ?", conn, params=[invoice_id]
+            )
+            
+            if invoice_df.empty:
+                return None, None
+            
+            invoice = invoice_df.iloc[0].to_dict()
+            
+            # Get invoice items
+            items_df = pd.read_sql_query(
+                "SELECT * FROM invoice_items WHERE invoice_id = ?", conn, params=[invoice_id]
+            )
+            
+            items = items_df.to_dict('records') if not items_df.empty else []
+            
+            return invoice, items
+    except Exception as e:
+        logger.error(f"Get invoice by ID error: {e}")
+        return None, None
+
+def delete_invoice(invoice_id):
+    """Delete invoice and its items"""
+    try:
+        with get_db_connection() as conn:
+            c = conn.cursor()
+            
+            # Get invoice number for logging
+            c.execute("SELECT invoice_number FROM invoices WHERE id = ?", (invoice_id,))
+            result = c.fetchone()
+            invoice_number = result['invoice_number'] if result else "Unknown"
+            
+            # Delete items first (foreign key constraint)
+            c.execute("DELETE FROM invoice_items WHERE invoice_id = ?", (invoice_id,))
+            
+            # Delete payments
+            c.execute("DELETE FROM payments WHERE invoice_id = ?", (invoice_id,))
+            
+            # Delete invoice
+            c.execute("DELETE FROM invoices WHERE id = ?", (invoice_id,))
+            
+            conn.commit()
+            
+            # Log action
+            log_action(1, 'DELETE_INVOICE', f"Deleted invoice {invoice_number}")
+            
+            return True
+    except Exception as e:
+        logger.error(f"Delete invoice error: {e}")
+        return False
+
+def save_client_to_db(client_data):
+    """Save or update client"""
+    try:
+        with get_db_connection() as conn:
+            c = conn.cursor()
+            
+            # Check if client exists
+            c.execute("SELECT id FROM clients WHERE email = ?", (client_data['email'],))
+            existing = c.fetchone()
+            
+            if existing:
+                # Update existing client
+                c.execute('''UPDATE clients SET name = ?, phone = ?, address = ?, 
+                            company = ?, tax_id = ?, notes = ?, credit_limit = ?,
+                            payment_terms = ?, updated_at = ?
+                            WHERE email = ?''',
+                         (client_data['name'], client_data.get('phone', ''),
+                          client_data.get('address', ''), client_data.get('company', ''),
+                          client_data.get('tax_id', ''), client_data.get('notes', ''),
+                          client_data.get('credit_limit', 0), client_data.get('payment_terms', 30),
+                          datetime.now().isoformat(), client_data['email']))
+                client_id = existing[0]
+            else:
+                # Insert new client
+                c.execute('''INSERT INTO clients 
+                           (name, email, phone, address, company, tax_id, notes, 
+                            credit_limit, payment_terms, created_at, updated_at)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                         (client_data['name'], client_data['email'], 
+                          client_data.get('phone', ''), client_data.get('address', ''),
+                          client_data.get('company', ''), client_data.get('tax_id', ''),
+                          client_data.get('notes', ''), client_data.get('credit_limit', 0),
+                          client_data.get('payment_terms', 30), datetime.now().isoformat(),
+                          datetime.now().isoformat()))
+                client_id = c.lastrowid
+            
+            conn.commit()
+            
+            # Log action
+            log_action(1, 'SAVE_CLIENT', f"Saved client {client_data['name']}")
+            
+            return client_id
+    except Exception as e:
+        logger.error(f"Save client error: {e}")
+        return None
+
+def get_clients(search=None):
+    """Get clients with optional search"""
+    try:
+        with get_db_connection() as conn:
+            if search:
+                query = "SELECT * FROM clients WHERE name LIKE ? OR email LIKE ? OR company LIKE ? ORDER BY name"
+                params = [f"%{search}%", f"%{search}%", f"%{search}%"]
+                df = pd.read_sql_query(query, conn, params=params)
+            else:
+                df = pd.read_sql_query("SELECT * FROM clients ORDER BY name", conn)
+            
+            return df
+    except Exception as e:
+        logger.error(f"Get clients error: {e}")
+        return pd.DataFrame()
+
 def create_recurring_invoice(template_id, client_id, frequency, start_date, end_date=None):
     """Create recurring invoice schedule"""
     try:
@@ -622,235 +800,244 @@ def get_dashboard_stats():
         logger.error(f"Dashboard stats error: {e}")
         return None
 
+def get_client_payment_history(client_id):
+    """Get client payment history"""
+    try:
+        with get_db_connection() as conn:
+            query = """
+            SELECT i.invoice_number, i.invoice_date, i.grand_total, 
+                   p.amount as paid_amount, p.payment_date, p.payment_method,
+                   i.grand_total - COALESCE(p.total_paid, 0) as balance
+            FROM invoices i
+            LEFT JOIN (
+                SELECT invoice_id, SUM(amount) as total_paid,
+                       MAX(payment_date) as last_payment
+                FROM payments
+                GROUP BY invoice_id
+            ) p_sum ON i.id = p_sum.invoice_id
+            LEFT JOIN payments p ON i.id = p.invoice_id
+            WHERE i.client_id = ?
+            ORDER BY i.invoice_date DESC
+            """
+            df = pd.read_sql_query(query, conn, params=[client_id])
+            return df
+    except Exception as e:
+        logger.error(f"Client payment history error: {e}")
+        return pd.DataFrame()
+
 # ============================================================================
-# ENHANCED CSS STYLING
+# PDF GENERATION - ENHANCED
 # ============================================================================
 
-st.markdown("""
-    <style>
-    /* Global Styles */
-    .stApp {
-        background-color: #f8fafc;
-        font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-    }
+def generate_pdf_invoice(invoice_data):
+    """Generate PDF invoice with enhanced formatting"""
+    if not PDF_AVAILABLE:
+        return None
     
-    /* Headers */
-    h1, h2, h3, h4, h5, h6 {
-        color: #0f172a !important;
-    }
-    
-    /* App Header */
-    .app-header {
-        background: linear-gradient(135deg, #1e40af, #3b82f6);
-        padding: 1.5rem 2rem;
-        border-bottom: 1px solid #e2e8f0;
-        margin-bottom: 2rem;
-        color: white;
-    }
-    
-    .app-title {
-        color: white !important;
-        font-size: 1.8rem;
-        font-weight: 600;
-        margin: 0;
-    }
-    
-    .app-subtitle {
-        color: #e0f2fe !important;
-        font-size: 0.9rem;
-        margin-top: 0.25rem;
-    }
-    
-    /* Cards */
-    .business-card {
-        background: white;
-        border-radius: 12px;
-        padding: 1.5rem;
-        border: 1px solid #e2e8f0;
-        margin-bottom: 1.5rem;
-        box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
-        transition: all 0.3s;
-    }
-    
-    .business-card:hover {
-        box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);
-        transform: translateY(-2px);
-    }
-    
-    .section-header {
-        font-size: 1.1rem;
-        font-weight: 600;
-        color: #0f172a;
-        margin-bottom: 1.25rem;
-        padding-bottom: 0.75rem;
-        border-bottom: 2px solid #2563eb;
-    }
-    
-    /* Status Badges */
-    .status-badge {
-        display: inline-block;
-        padding: 0.25rem 0.75rem;
-        border-radius: 9999px;
-        font-size: 0.75rem;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-    }
-    
-    /* Metric Cards */
-    .metric-card {
-        background: linear-gradient(135deg, #f8fafc, #ffffff);
-        border-radius: 12px;
-        padding: 1.5rem;
-        border: 1px solid #e2e8f0;
-        text-align: center;
-    }
-    
-    .metric-value {
-        font-size: 2rem;
-        font-weight: 700;
-        color: #0f172a;
-        margin: 0.5rem 0;
-    }
-    
-    .metric-label {
-        color: #64748b;
-        font-size: 0.875rem;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-    }
-    
-    /* Button Styles */
-    .stButton > button {
-        border-radius: 8px;
-        font-weight: 500;
-        transition: all 0.2s;
-        border: none;
-        cursor: pointer;
-    }
-    
-    .stButton > button[kind="primary"] {
-        background: linear-gradient(135deg, #2563eb, #3b82f6);
-        color: white !important;
-    }
-    
-    /* Form Inputs */
-    .stTextInput input, .stNumberInput input, .stDateInput input,
-    .stSelectbox select, .stTextArea textarea {
-        border: 1px solid #cbd5e1;
-        border-radius: 8px;
-        padding: 0.5rem;
-        color: #1e293b !important;
-        background-color: white !important;
-    }
-    
-    .stTextInput input:focus, .stNumberInput input:focus, .stDateInput input:focus,
-    .stSelectbox select:focus, .stTextArea textarea:focus {
-        border-color: #2563eb;
-        ring: 2px solid #2563eb;
-    }
-    
-    /* Invoice Preview */
-    .invoice-preview-container {
-        background: white;
-        border-radius: 16px;
-        padding: 2rem;
-        border: 1px solid #e2e8f0;
-        margin: 1rem 0 2rem 0;
-        box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
-    }
-    
-    /* Grand Total Box */
-    .grand-total-box {
-        background: linear-gradient(135deg, #1e40af, #3b82f6);
-        padding: 1.5rem;
-        border-radius: 12px;
-        color: white;
-        box-shadow: 0 10px 15px -3px rgba(37, 99, 235, 0.3);
-    }
-    
-    /* Progress Bar */
-    .progress-bar {
-        width: 100%;
-        height: 8px;
-        background: #e2e8f0;
-        border-radius: 9999px;
-        overflow: hidden;
-    }
-    
-    .progress-fill {
-        height: 100%;
-        background: linear-gradient(90deg, #2563eb, #3b82f6);
-        transition: width 0.3s;
-    }
-    
-    /* Alert Messages */
-    .alert-success {
-        background: #d1fae5;
-        color: #065f46;
-        padding: 1rem;
-        border-radius: 8px;
-        border-left: 4px solid #10b981;
-    }
-    
-    .alert-warning {
-        background: #fed7aa;
-        color: #92400e;
-        padding: 1rem;
-        border-radius: 8px;
-        border-left: 4px solid #f59e0b;
-    }
-    
-    .alert-error {
-        background: #fee2e2;
-        color: #b91c1c;
-        padding: 1rem;
-        border-radius: 8px;
-        border-left: 4px solid #ef4444;
-    }
-    
-    /* Tabs */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
-        background: white;
-        padding: 0.5rem;
-        border-radius: 12px;
-        border: 1px solid #e2e8f0;
-    }
-    
-    .stTabs [data-baseweb="tab"] {
-        border-radius: 8px;
-        padding: 0.5rem 1rem;
-        color: #64748b;
-    }
-    
-    .stTabs [aria-selected="true"] {
-        background: #2563eb;
-        color: white !important;
-    }
-    
-    /* Footer */
-    .app-footer {
-        text-align: center;
-        padding: 2rem;
-        color: #64748b;
-        font-size: 0.85rem;
-        border-top: 1px solid #e2e8f0;
-        margin-top: 3rem;
-        background: white;
-    }
-    
-    /* Animations */
-    @keyframes fadeIn {
-        from { opacity: 0; transform: translateY(10px); }
-        to { opacity: 1; transform: translateY(0); }
-    }
-    
-    .fade-in {
-        animation: fadeIn 0.5s ease-out;
-    }
-    </style>
-""", unsafe_allow_html=True)
+    try:
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=A4,
+                               rightMargin=36, leftMargin=36,
+                               topMargin=36, bottomMargin=36)
+        
+        styles = getSampleStyleSheet()
+        story = []
+        
+        # Custom styles
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Heading1'],
+            fontSize=24,
+            textColor=colors.HexColor('#0f172a'),
+            alignment=TA_CENTER,
+            spaceAfter=20
+        )
+        
+        normal_style = ParagraphStyle(
+            'CustomNormal',
+            parent=styles['Normal'],
+            fontSize=10,
+            leading=14,
+            textColor=colors.HexColor('#1e293b')
+        )
+        
+        description_style = ParagraphStyle(
+            'Description',
+            parent=normal_style,
+            wordWrap='CJK',
+            alignment=TA_LEFT
+        )
+        
+        right_style = ParagraphStyle(
+            'RightAlign',
+            parent=normal_style,
+            alignment=TA_RIGHT
+        )
+        
+        # Get company info
+        company = invoice_data.get('company_info', {})
+        
+        # Create header
+        header_data = []
+        
+        # Add logo if available
+        logo_bytes = company.get('logo_bytes')
+        if logo_bytes:
+            try:
+                img_buffer = io.BytesIO(logo_bytes)
+                img = RLImage(img_buffer, width=1.5*inch, height=0.75*inch)
+                header_data.append([img, Paragraph("<b>INVOICE</b>", title_style)])
+            except:
+                header_data.append([Paragraph(f"<b>{company.get('name', '')}</b>", normal_style), 
+                                   Paragraph("<b>INVOICE</b>", title_style)])
+        else:
+            header_data.append([Paragraph(f"<b>{company.get('name', '')}</b>", normal_style), 
+                               Paragraph("<b>INVOICE</b>", title_style)])
+        
+        # Add company details
+        header_data.extend([
+            [Paragraph(company.get('address', ''), normal_style),
+             Paragraph(f"<b>#{invoice_data.get('invoice_number', '')}</b>", right_style)],
+            [Paragraph(company.get('city', ''), normal_style),
+             Paragraph(f"Date: {invoice_data.get('invoice_date', '')}", right_style)],
+            [Paragraph(f"Phone: {company.get('phone', '')}", normal_style),
+             Paragraph(f"Due: {invoice_data.get('due_date', '')}", right_style)],
+            [Paragraph(f"Email: {company.get('email', '')}", normal_style),
+             Paragraph(f"PO: {invoice_data.get('po_number', 'N/A')}", right_style)]
+        ])
+        
+        if invoice_data.get('status'):
+            header_data.append([Paragraph("", normal_style),
+                               Paragraph(f"<b>Status: {invoice_data['status']}</b>", right_style)])
+        
+        header_table = Table(header_data, colWidths=[3.5*inch, 3.5*inch])
+        header_table.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+            ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ]))
+        story.append(header_table)
+        story.append(Spacer(1, 20))
+        
+        # Client info
+        client = invoice_data.get('client', {})
+        client_text = f"""
+        <b>Bill To:</b><br/>
+        {client.get('name', '')}<br/>
+        {client.get('address', '')}<br/>
+        {client.get('email', '')}
+        """
+        story.append(Paragraph(client_text, normal_style))
+        story.append(Spacer(1, 20))
+        
+        # Items table
+        if 'items' in invoice_data and invoice_data['items']:
+            table_data = [
+                ['Description', 'Qty', 'Unit Price', 'Tax %', 'Disc %', 'Total']
+            ]
+            
+            currency = invoice_data.get('currency', 'TTD')
+            symbol = get_currency_symbol(currency)
+            
+            for item in invoice_data['items']:
+                desc_para = Paragraph(item.get('description', ''), description_style)
+                
+                table_data.append([
+                    desc_para,
+                    str(item.get('quantity', '1')),
+                    f"{symbol}{item.get('unit_price', 0):,.2f}",
+                    f"{item.get('tax_rate', 0)}%",
+                    f"{item.get('discount', 0)}%",
+                    f"{symbol}{item.get('total', 0):,.2f}"
+                ])
+            
+            col_widths = [2.8*inch, 0.4*inch, 0.8*inch, 0.5*inch, 0.5*inch, 1*inch]
+            table = Table(table_data, colWidths=col_widths, repeatRows=1)
+            
+            table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2563eb')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+                ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#1e293b')),
+                ('ALIGN', (1, 1), (1, -1), 'CENTER'),
+                ('ALIGN', (2, 1), (5, -1), 'RIGHT'),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('FONTSIZE', (0, 1), (-1, -1), 9),
+                ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#e2e8f0')),
+                ('ALIGN', (0, 1), (0, -1), 'LEFT'),
+            ]))
+            
+            story.append(table)
+            story.append(Spacer(1, 20))
+            
+            # Totals section
+            totals = invoice_data.get('totals', {})
+            subtotal = totals.get('subtotal', 0)
+            discount = totals.get('discount', 0)
+            tax = totals.get('tax', 0)
+            grand_total = totals.get('grand_total', 0)
+            
+            totals_data = [
+                ['Subtotal:', f"{symbol}{subtotal:,.2f}"],
+                ['Discount:', f"-{symbol}{discount:,.2f}"],
+                ['Tax:', f"{symbol}{tax:,.2f}"],
+                ['Grand Total:', f"{symbol}{grand_total:,.2f}"]
+            ]
+            
+            # Add payment info if available
+            if invoice_data.get('amount_paid', 0) > 0:
+                totals_data.append(['Amount Paid:', f"{symbol}{invoice_data['amount_paid']:,.2f}"])
+                totals_data.append(['Balance Due:', f"{symbol}{invoice_data.get('balance_due', 0):,.2f}"])
+            
+            totals_table = Table(totals_data, colWidths=[1.5*inch, 1.5*inch])
+            totals_table.setStyle(TableStyle([
+                ('ALIGN', (0, 0), (0, -1), 'RIGHT'),
+                ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+                ('FONTNAME', (0, -1), (1, -1), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, -1), (1, -1), 12),
+                ('LINEABOVE', (0, -1), (1, -1), 2, colors.HexColor('#2563eb')),
+                ('BACKGROUND', (0, -1), (1, -1), colors.HexColor('#f0f9ff')),
+                ('TEXTCOLOR', (0, -1), (1, -1), colors.HexColor('#0f172a')),
+            ]))
+            
+            story.append(Table([[totals_table]], colWidths=[7*inch]))
+            story.append(Spacer(1, 20))
+        
+        # Payment details
+        if company.get('bank_details'):
+            story.append(Paragraph("<b>Payment Details:</b>", normal_style))
+            story.append(Paragraph(company['bank_details'], normal_style))
+            story.append(Spacer(1, 20))
+        
+        # Notes
+        if invoice_data.get('notes'):
+            story.append(Paragraph("<b>Notes:</b>", normal_style))
+            story.append(Paragraph(invoice_data['notes'], normal_style))
+            story.append(Spacer(1, 20))
+        
+        # Footer
+        footer_style = ParagraphStyle(
+            'Footer',
+            parent=styles['Italic'],
+            fontSize=9,
+            textColor=colors.HexColor('#64748b'),
+            alignment=TA_CENTER
+        )
+        story.append(Paragraph("Thank you for your business!", footer_style))
+        
+        doc.build(story)
+        buffer.seek(0)
+        return buffer
+        
+    except Exception as e:
+        logger.error(f"PDF generation error: {e}")
+        return None
 
 # ============================================================================
 # HELPER FUNCTIONS
@@ -1062,30 +1249,205 @@ def export_to_excel(invoice_data, items):
         logger.error(f"Excel export error: {e}")
         return None
 
-def get_client_payment_history(client_id):
-    """Get client payment history"""
-    try:
-        with get_db_connection() as conn:
-            query = """
-            SELECT i.invoice_number, i.invoice_date, i.grand_total, 
-                   p.amount as paid_amount, p.payment_date, p.payment_method,
-                   i.grand_total - COALESCE(p.total_paid, 0) as balance
-            FROM invoices i
-            LEFT JOIN (
-                SELECT invoice_id, SUM(amount) as total_paid,
-                       MAX(payment_date) as last_payment
-                FROM payments
-                GROUP BY invoice_id
-            ) p_sum ON i.id = p_sum.invoice_id
-            LEFT JOIN payments p ON i.id = p.invoice_id
-            WHERE i.client_id = ?
-            ORDER BY i.invoice_date DESC
-            """
-            df = pd.read_sql_query(query, conn, params=[client_id])
-            return df
-    except Exception as e:
-        logger.error(f"Client payment history error: {e}")
-        return pd.DataFrame()
+# ============================================================================
+# CSS STYLING
+# ============================================================================
+
+st.markdown("""
+    <style>
+    /* Global Styles */
+    .stApp {
+        background-color: #f8fafc;
+        font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+    
+    /* Headers */
+    h1, h2, h3, h4, h5, h6 {
+        color: #0f172a !important;
+    }
+    
+    /* App Header */
+    .app-header {
+        background: linear-gradient(135deg, #1e40af, #3b82f6);
+        padding: 1.5rem 2rem;
+        border-bottom: 1px solid #e2e8f0;
+        margin-bottom: 2rem;
+        color: white;
+    }
+    
+    .app-title {
+        color: white !important;
+        font-size: 1.8rem;
+        font-weight: 600;
+        margin: 0;
+    }
+    
+    .app-subtitle {
+        color: #e0f2fe !important;
+        font-size: 0.9rem;
+        margin-top: 0.25rem;
+    }
+    
+    /* Cards */
+    .business-card {
+        background: white;
+        border-radius: 12px;
+        padding: 1.5rem;
+        border: 1px solid #e2e8f0;
+        margin-bottom: 1.5rem;
+        box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+        transition: all 0.3s;
+    }
+    
+    .business-card:hover {
+        box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);
+        transform: translateY(-2px);
+    }
+    
+    .section-header {
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: #0f172a;
+        margin-bottom: 1.25rem;
+        padding-bottom: 0.75rem;
+        border-bottom: 2px solid #2563eb;
+    }
+    
+    /* Status Badges */
+    .status-badge {
+        display: inline-block;
+        padding: 0.25rem 0.75rem;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+    
+    /* Metric Cards */
+    .metric-card {
+        background: linear-gradient(135deg, #f8fafc, #ffffff);
+        border-radius: 12px;
+        padding: 1.5rem;
+        border: 1px solid #e2e8f0;
+        text-align: center;
+    }
+    
+    .metric-value {
+        font-size: 2rem;
+        font-weight: 700;
+        color: #0f172a;
+        margin: 0.5rem 0;
+    }
+    
+    .metric-label {
+        color: #64748b;
+        font-size: 0.875rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+    
+    /* Invoice Preview */
+    .invoice-preview-container {
+        background: white;
+        border-radius: 16px;
+        padding: 2rem;
+        border: 1px solid #e2e8f0;
+        margin: 1rem 0 2rem 0;
+        box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+    }
+    
+    /* Grand Total Box */
+    .grand-total-box {
+        background: linear-gradient(135deg, #1e40af, #3b82f6);
+        padding: 1.5rem;
+        border-radius: 12px;
+        color: white;
+        box-shadow: 0 10px 15px -3px rgba(37, 99, 235, 0.3);
+    }
+    
+    /* Progress Bar */
+    .progress-bar {
+        width: 100%;
+        height: 8px;
+        background: #e2e8f0;
+        border-radius: 9999px;
+        overflow: hidden;
+    }
+    
+    .progress-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #2563eb, #3b82f6);
+        transition: width 0.3s;
+    }
+    
+    /* Alert Messages */
+    .alert-success {
+        background: #d1fae5;
+        color: #065f46;
+        padding: 1rem;
+        border-radius: 8px;
+        border-left: 4px solid #10b981;
+    }
+    
+    .alert-warning {
+        background: #fed7aa;
+        color: #92400e;
+        padding: 1rem;
+        border-radius: 8px;
+        border-left: 4px solid #f59e0b;
+    }
+    
+    .alert-error {
+        background: #fee2e2;
+        color: #b91c1c;
+        padding: 1rem;
+        border-radius: 8px;
+        border-left: 4px solid #ef4444;
+    }
+    
+    /* Tabs */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+        background: white;
+        padding: 0.5rem;
+        border-radius: 12px;
+        border: 1px solid #e2e8f0;
+    }
+    
+    .stTabs [data-baseweb="tab"] {
+        border-radius: 8px;
+        padding: 0.5rem 1rem;
+        color: #64748b;
+    }
+    
+    .stTabs [aria-selected="true"] {
+        background: #2563eb;
+        color: white !important;
+    }
+    
+    /* Footer */
+    .app-footer {
+        text-align: center;
+        padding: 2rem;
+        color: #64748b;
+        font-size: 0.85rem;
+        border-top: 1px solid #e2e8f0;
+        margin-top: 3rem;
+        background: white;
+    }
+    
+    /* Animations */
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    
+    .fade-in {
+        animation: fadeIn 0.5s ease-out;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
 # ============================================================================
 # SESSION STATE INITIALIZATION
@@ -1158,7 +1520,10 @@ def init_session_state():
         'payment_reference': '',
         'template_name': '',
         'notification': None,
-        'notification_type': None
+        'notification_type': None,
+        'payment_invoice_id': None,
+        'show_payment_modal': False,
+        'show_email_modal': False
     }
     
     for key, value in defaults.items():
@@ -1375,10 +1740,11 @@ def render_dashboard_page():
         
         with col2:
             st.markdown("### 📊 Invoice Status")
-            status_counts = pd.read_sql_query(
-                "SELECT status, COUNT(*) as count FROM invoices GROUP BY status",
-                get_db_connection().__enter__()
-            )
+            with get_db_connection() as conn:
+                status_counts = pd.read_sql_query(
+                    "SELECT status, COUNT(*) as count FROM invoices GROUP BY status",
+                    conn
+                )
             
             if not status_counts.empty:
                 fig = px.pie(
@@ -1421,7 +1787,7 @@ def render_dashboard_page():
         st.warning("Unable to load dashboard statistics")
 
 # ============================================================================
-# CREATE INVOICE PAGE (Enhanced)
+# CREATE INVOICE PAGE
 # ============================================================================
 
 def render_create_invoice_page():
@@ -2037,7 +2403,7 @@ def render_create_invoice_page():
                     st.warning("⚠️ Enter an email address")
 
 # ============================================================================
-# VIEW INVOICES PAGE (Enhanced)
+# VIEW INVOICES PAGE
 # ============================================================================
 
 def render_view_invoices_page():
@@ -2075,16 +2441,6 @@ def render_view_invoices_page():
         
         with col4:
             filter_date_to = st.date_input("To Date", value=None, key="filter_date_to")
-        
-        # Advanced filters
-        with st.expander("Advanced Filters"):
-            col1, col2 = st.columns(2)
-            with col1:
-                min_amount = st.number_input("Min Amount", min_value=0.0, value=0.0)
-            with col2:
-                max_amount = st.number_input("Max Amount", min_value=0.0, value=0.0)
-            
-            currency_filter = st.selectbox("Currency", options=['All'] + list(CURRENCIES.keys()))
         
         st.markdown('</div>', unsafe_allow_html=True)
     
@@ -2219,31 +2575,6 @@ def render_view_invoices_page():
                                 st.rerun()
                 
                 st.markdown('</div>', unsafe_allow_html=True)
-        
-        # Export options
-        st.markdown("---")
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            if st.button("📥 Export to CSV", use_container_width=True):
-                csv = invoices_df.to_csv(index=False)
-                st.download_button(
-                    label="Download CSV",
-                    data=csv,
-                    file_name=f"invoices_export_{datetime.now().strftime('%Y%m%d')}.csv",
-                    mime="text/csv"
-                )
-        
-        with col2:
-            if st.button("📊 Export to Excel", use_container_width=True) and EXCEL_AVAILABLE:
-                output = io.BytesIO()
-                with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                    invoices_df.to_excel(writer, sheet_name='Invoices', index=False)
-                st.download_button(
-                    label="Download Excel",
-                    data=output.getvalue(),
-                    file_name=f"invoices_export_{datetime.now().strftime('%Y%m%d')}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
     
     else:
         st.info("📭 No invoices found. Create your first invoice!")
@@ -2694,7 +3025,7 @@ def render_recurring_page():
                     with col4:
                         if st.button("⏸️ Pause", key=f"pause_{recurring['id']}"):
                             # Update recurring status
-                            st.experimental_rerun()
+                            st.rerun()
                     
                     st.markdown('</div>', unsafe_allow_html=True)
         else:
@@ -2705,7 +3036,9 @@ def render_recurring_page():
                 st.markdown("### Create Recurring Invoice")
                 
                 # Get templates
-                templates_df = pd.read_sql_query("SELECT * FROM invoice_templates", conn)
+                with get_db_connection() as conn:
+                    templates_df = pd.read_sql_query("SELECT * FROM invoice_templates", conn)
+                
                 if not templates_df.empty:
                     template = st.selectbox(
                         "Select Template",
@@ -2713,7 +3046,9 @@ def render_recurring_page():
                     )
                     
                     # Get clients
-                    clients_df = pd.read_sql_query("SELECT * FROM clients", conn)
+                    with get_db_connection() as conn:
+                        clients_df = pd.read_sql_query("SELECT * FROM clients", conn)
+                    
                     if not clients_df.empty:
                         client = st.selectbox(
                             "Select Client",
@@ -3111,12 +3446,14 @@ def render_settings_page():
                     new_vat = st.checkbox("VAT Registered", value=bool(company['vat_registered']))
                 
                 if st.button("💾 Update Company Settings", use_container_width=True):
-                    c.execute('''UPDATE company_settings 
-                               SET name=?, address=?, city=?, phone=?, email=?, 
-                                   tax_id=?, bank_details=?, vat_registered=?, updated_at=?
-                               WHERE id=1''',
-                             (new_name, new_address, new_city, new_phone, new_email,
-                              new_tax_id, new_bank, new_vat, datetime.now().isoformat()))
+                    with get_db_connection() as conn:
+                        c = conn.cursor()
+                        c.execute('''UPDATE company_settings 
+                                   SET name=?, address=?, city=?, phone=?, email=?, 
+                                       tax_id=?, bank_details=?, vat_registered=?, updated_at=?
+                                   WHERE id=1''',
+                                 (new_name, new_address, new_city, new_phone, new_email,
+                                  new_tax_id, new_bank, new_vat, datetime.now().isoformat()))
                     st.success("Settings updated!")
                     
                     # Update session state
@@ -3338,18 +3675,6 @@ def render_help_page():
         Invoice Pro Software  
         123 Business Street  
         Port of Spain, Trinidad
-        """)
-    
-    with st.expander("📚 Keyboard Shortcuts"):
-        st.markdown("""
-        | Shortcut | Action |
-        |----------|--------|
-        | `Ctrl + N` | New Invoice |
-        | `Ctrl + S` | Save Invoice |
-        | `Ctrl + P` | Print/PDF |
-        | `Ctrl + F` | Search |
-        | `Ctrl + D` | Dashboard |
-        | `Ctrl + ,` | Settings |
         """)
 
 # ============================================================================
