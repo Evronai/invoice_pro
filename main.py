@@ -1070,10 +1070,42 @@ def calculate_item_totals(quantity, unit_price, tax_rate=0, discount=0):
     }
 
 def generate_invoice_number():
-    """Generate unique invoice number"""
+    """Generate unique invoice number with safe session state access"""
     timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
-    prefix = st.session_state.company_info.get('invoice_prefix', 'INV')
+    
+    # Default prefix
+    prefix = 'INV'
+    
+    # Safely try to get from session state
+    try:
+        # Check if session state exists and has company_info
+        if 'st' in globals() and hasattr(st, 'session_state'):
+            if 'company_info' in st.session_state:
+                prefix = st.session_state.company_info.get('invoice_prefix', 'INV')
+    except (AttributeError, KeyError, NameError):
+        # If any error occurs, use default
+        pass
+    
     return f"{prefix}-{timestamp}"
+
+def safe_session_state_get(key, default=None):
+    """Safely get a value from session state"""
+    try:
+        if hasattr(st, 'session_state') and key in st.session_state:
+            return st.session_state[key]
+    except (AttributeError, KeyError):
+        pass
+    return default
+
+def safe_company_info_get(key, default=None):
+    """Safely get a value from company_info in session state"""
+    try:
+        if hasattr(st, 'session_state'):
+            company_info = st.session_state.get('company_info', {})
+            return company_info.get(key, default)
+    except (AttributeError, KeyError):
+        pass
+    return default
 
 def save_logo(uploaded_file):
     """Save uploaded logo to session state"""
@@ -1450,13 +1482,11 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ============================================================================
-# SESSION STATE INITIALIZATION
+# SESSION STATE INITIALIZATION - FIXED VERSION
 # ============================================================================
 
-def init_session_state():
-    """Initialize all session state variables"""
-    
-    # Load company settings from database
+def safe_load_company_info():
+    """Safely load company info from database without depending on session state"""
     company_info = {
         'name': 'Your Business Name',
         'address': '123 Business Street',
@@ -1466,39 +1496,67 @@ def init_session_state():
         'tax_id': '123456789',
         'bank_details': 'First Citizens Bank\nAccount: 123456789\nSort Code: 123-456',
         'invoice_prefix': 'INV',
-        'vat_registered': True
+        'vat_registered': True,
+        'default_currency': 'TTD'
     }
     
     try:
-        with get_db_connection() as conn:
+        # Check if database exists and is accessible
+        if os.path.exists('invoices.db'):
+            # Create a connection without using the context manager to avoid any session state issues
+            conn = sqlite3.connect('invoices.db')
+            conn.row_factory = sqlite3.Row
             c = conn.cursor()
-            c.execute("SELECT * FROM company_settings WHERE id = 1")
-            row = c.fetchone()
-            if row:
-                company_info = {
-                    'name': row['name'],
-                    'address': row['address'],
-                    'city': row['city'],
-                    'phone': row['phone'],
-                    'email': row['email'],
-                    'tax_id': row['tax_id'],
-                    'bank_details': row['bank_details'],
-                    'logo_bytes': row['logo_data'],
-                    'logo_mime': row['logo_mime'],
-                    'default_currency': row['default_currency'],
-                    'vat_registered': bool(row['vat_registered']),
-                    'invoice_prefix': row['invoice_prefix']
-                }
-                if row['logo_data']:
-                    company_info['logo_base64'] = base64.b64encode(row['logo_data']).decode()
+            
+            # Check if table exists
+            c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='company_settings'")
+            if c.fetchone():
+                c.execute("SELECT * FROM company_settings WHERE id = 1")
+                row = c.fetchone()
+                if row:
+                    company_info = {
+                        'name': row['name'] or company_info['name'],
+                        'address': row['address'] or company_info['address'],
+                        'city': row['city'] or company_info['city'],
+                        'phone': row['phone'] or company_info['phone'],
+                        'email': row['email'] or company_info['email'],
+                        'tax_id': row['tax_id'] or company_info['tax_id'],
+                        'bank_details': row['bank_details'] or company_info['bank_details'],
+                        'logo_bytes': row['logo_data'],
+                        'logo_mime': row['logo_mime'],
+                        'default_currency': row['default_currency'] or 'TTD',
+                        'vat_registered': bool(row['vat_registered']) if row['vat_registered'] is not None else True,
+                        'invoice_prefix': row['invoice_prefix'] or 'INV'
+                    }
+                    if row['logo_data']:
+                        company_info['logo_base64'] = base64.b64encode(row['logo_data']).decode()
+            conn.close()
     except Exception as e:
         logger.error(f"Error loading company settings: {e}")
+        # Return default values if database load fails
+    
+    return company_info
+
+def init_session_state():
+    """Initialize all session state variables in correct order"""
+    
+    # STEP 1: Initialize the most basic structure first
+    # This ensures we always have company_info available
+    
+    # Load company info without depending on session state
+    loaded_company_info = safe_load_company_info()
+    
+    # Initialize company_info in session state
+    if 'company_info' not in st.session_state:
+        st.session_state.company_info = loaded_company_info
+    
+    # STEP 2: Initialize all other session variables with defaults
+    # These don't depend on anything else
     
     defaults = {
         'invoice_items': [],
-        'invoice_number': generate_invoice_number(),
-        'company_info': company_info,
-        'currency': company_info.get('default_currency', 'TTD'),
+        'invoice_number': None,  # Will be set after company_info is ready
+        'currency': st.session_state.company_info.get('default_currency', 'TTD'),
         'database_initialized': False,
         'current_page': 'dashboard',
         'clients': [],
@@ -1511,7 +1569,7 @@ def init_session_state():
         'filter_client': '',
         'filter_date_from': None,
         'filter_date_to': None,
-        'user_id': 1,  # Default user
+        'user_id': 1,
         'user_role': 'admin',
         'show_help': False,
         'recurring_frequency': 'None',
@@ -1529,17 +1587,56 @@ def init_session_state():
     for key, value in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = value
+    
+    # STEP 3: Now that company_info is definitely in session state,
+    # we can safely generate the invoice number
+    if st.session_state.invoice_number is None:
+        st.session_state.invoice_number = generate_invoice_number()
 
+# Initialize session state
 init_session_state()
 
-# Initialize database
+# Initialize database (now that session state is ready)
 if not st.session_state.database_initialized:
     if init_database():
         st.session_state.database_initialized = True
+        # Reload company info from database now that it's initialized
+        try:
+            with get_db_connection() as conn:
+                c = conn.cursor()
+                c.execute("SELECT * FROM company_settings WHERE id = 1")
+                row = c.fetchone()
+                if row:
+                    st.session_state.company_info.update({
+                        'name': row['name'],
+                        'address': row['address'],
+                        'city': row['city'],
+                        'phone': row['phone'],
+                        'email': row['email'],
+                        'tax_id': row['tax_id'],
+                        'bank_details': row['bank_details'],
+                        'default_currency': row['default_currency'] or 'TTD',
+                        'vat_registered': bool(row['vat_registered']),
+                        'invoice_prefix': row['invoice_prefix'] or 'INV'
+                    })
+                    if row['logo_data']:
+                        st.session_state.company_info['logo_bytes'] = row['logo_data']
+                        st.session_state.company_info['logo_mime'] = row['logo_mime']
+                        st.session_state.company_info['logo_base64'] = base64.b64encode(row['logo_data']).decode()
+        except Exception as e:
+            logger.error(f"Error reloading company settings: {e}")
 
 # ============================================================================
-# HEADER
+# HEADER - WITH SAFE ACCESS
 # ============================================================================
+
+# Safely get values for header
+try:
+    currency_name = CURRENCIES[st.session_state.currency]['name']
+    user_role = st.session_state.user_role.title()
+except (KeyError, AttributeError):
+    currency_name = 'Trinidad & Tobago Dollar'
+    user_role = 'Admin'
 
 st.markdown(f"""
     <div class="app-header fade-in">
@@ -1550,10 +1647,10 @@ st.markdown(f"""
             </div>
             <div style="display: flex; gap: 1rem; align-items: center;">
                 <div style="background: rgba(255,255,255,0.2); padding: 0.75rem 1.5rem; border-radius: 8px; font-weight: 600;">
-                    {CURRENCIES[st.session_state.currency]['name']}
+                    {currency_name}
                 </div>
                 <div style="background: rgba(255,255,255,0.2); padding: 0.75rem 1.5rem; border-radius: 8px;">
-                    👤 {st.session_state.user_role.title()}
+                    👤 {user_role}
                 </div>
             </div>
         </div>
