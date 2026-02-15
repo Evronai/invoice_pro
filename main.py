@@ -1,4 +1,4 @@
-# app.py (Fixed - Text wrapping in description & visible currency selector)
+# app.py (Final version - Fixed currency dropdown, removed TT from header)
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
@@ -95,7 +95,7 @@ FIXED_RATES = {
 }
 
 # ============================================================================
-# CLEAN CSS - FIXED CURRENCY SELECTOR VISIBILITY
+# CLEAN CSS - FIXED CURRENCY SELECTOR (NO BLACK BACKGROUND)
 # ============================================================================
 
 st.markdown("""
@@ -111,7 +111,7 @@ st.markdown("""
         color: #0f172a !important;
     }
     
-    /* App Header */
+    /* App Header - REMOVED TT */
     .app-header {
         background: white;
         padding: 1.5rem 2rem;
@@ -231,7 +231,7 @@ st.markdown("""
         margin-bottom: 0.25rem;
     }
     
-    /* FIXED: Currency Selector Visibility */
+    /* FIXED: Currency Selector - COMPLETELY REMOVED BLACK BACKGROUND */
     .stSelectbox div[data-baseweb="select"] > div {
         background-color: white !important;
         border: 1px solid #cbd5e1 !important;
@@ -246,7 +246,7 @@ st.markdown("""
         fill: #1e293b !important;
     }
     
-    /* Dropdown menu items */
+    /* Dropdown menu - NO BLACK BACKGROUND */
     div[data-baseweb="menu"] {
         background-color: white !important;
         border: 1px solid #e2e8f0 !important;
@@ -254,9 +254,13 @@ st.markdown("""
         box-shadow: 0 4px 6px rgba(0,0,0,0.1) !important;
     }
     
-    div[data-baseweb="menu"] li {
-        color: #1e293b !important;
+    div[data-baseweb="menu"] > div {
         background-color: white !important;
+    }
+    
+    div[data-baseweb="menu"] li {
+        background-color: white !important;
+        color: #1e293b !important;
     }
     
     div[data-baseweb="menu"] li:hover {
@@ -267,6 +271,15 @@ st.markdown("""
         background-color: #e2e8f0 !important;
         color: #0f172a !important;
         font-weight: 600;
+    }
+    
+    /* Ensure no black backgrounds anywhere in select */
+    .stSelectbox [data-baseweb="select"] {
+        background-color: white !important;
+    }
+    
+    .stSelectbox [data-baseweb="popover"] {
+        background-color: white !important;
     }
     
     /* Form Inputs */
@@ -300,11 +313,36 @@ st.markdown("""
         margin: 1rem 0 2rem 0;
     }
     
-    /* FIXED: Text wrapping in description */
-    .preview-description {
+    /* Text wrapping in description */
+    .preview-description, .preview-table td:first-child {
         white-space: normal !important;
         word-wrap: break-word !important;
         max-width: 300px;
+    }
+    
+    /* Preview table styling */
+    .preview-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+    
+    .preview-table th {
+        background: #f8fafc;
+        padding: 0.75rem;
+        text-align: left;
+        border-bottom: 2px solid #e2e8f0;
+        font-weight: 600;
+        color: #0f172a;
+    }
+    
+    .preview-table td {
+        padding: 0.75rem;
+        border-bottom: 1px solid #e2e8f0;
+        color: #1e293b;
+    }
+    
+    .preview-table .amount {
+        text-align: right;
     }
     
     /* Grand Total Box */
@@ -357,7 +395,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ============================================================================
-# FIXED PDF GENERATION FUNCTIONS - WITH TEXT WRAPPING
+# PDF GENERATION FUNCTIONS - WITH TEXT WRAPPING
 # ============================================================================
 
 def generate_pdf_invoice(invoice_data):
@@ -392,7 +430,7 @@ def generate_pdf_invoice(invoice_data):
             textColor=colors.HexColor('#1e293b')
         )
         
-        # FIXED: Style for wrapped text in description
+        # Style for wrapped text in description
         description_style = ParagraphStyle(
             'Description',
             parent=normal_style,
@@ -460,7 +498,7 @@ def generate_pdf_invoice(invoice_data):
         story.append(Paragraph(client_text, normal_style))
         story.append(Spacer(1, 20))
         
-        # Items table - FIXED TEXT WRAPPING
+        # Items table - WITH TEXT WRAPPING
         if 'items' in invoice_data and invoice_data['items']:
             # Prepare table data with proper headers
             table_data = [
@@ -687,14 +725,14 @@ def init_session_state():
 init_session_state()
 
 # ============================================================================
-# HEADER
+# HEADER - REMOVED TT
 # ============================================================================
 
 st.markdown("""
     <div class="app-header">
         <div style="display: flex; justify-content: space-between; align-items: center;">
             <div>
-                <h1 class="app-title">TT INVOICE PRO</h1>
+                <h1 class="app-title">INVOICE PRO</h1>
                 <div class="app-subtitle">Professional invoicing for Caribbean businesses</div>
             </div>
             <div style="background: #f1f5f9; padding: 0.5rem 1rem; border-radius: 6px; font-weight: 500;">
@@ -727,7 +765,7 @@ with st.sidebar:
     
     st.markdown("---")
     
-    # Currency selector - FIXED VISIBILITY
+    # Currency selector - FIXED VISIBILITY (NO BLACK BACKGROUND)
     st.markdown("### Currency Settings")
     currency_options = list(CURRENCIES.keys())
     
@@ -737,7 +775,7 @@ with st.sidebar:
         current_idx = 0
         st.session_state.currency = 'TTD'
     
-    # The selectbox will now be visible due to CSS fixes
+    # The selectbox will now be visible with white background
     selected_currency = st.selectbox(
         "Select Currency",
         options=currency_options,
@@ -1056,7 +1094,7 @@ if st.session_state.current_page == "create":
             
             st.divider()
             
-            # Items Table - FIXED TEXT WRAPPING
+            # Items Table - WITH TEXT WRAPPING
             items_data = []
             for item in st.session_state.invoice_items:
                 items_data.append({
@@ -1069,25 +1107,18 @@ if st.session_state.current_page == "create":
                 })
             
             if items_data:
-                # Use markdown table instead of dataframe for better text wrapping
-                table_html = '<table style="width:100%; border-collapse: collapse;">'
-                table_html += '<tr style="background: #f8fafc; border-bottom: 2px solid #e2e8f0;">'
-                table_html += '<th style="padding: 0.75rem; text-align: left;">Description</th>'
-                table_html += '<th style="padding: 0.75rem; text-align: right;">Qty</th>'
-                table_html += '<th style="padding: 0.75rem; text-align: right;">Price</th>'
-                table_html += '<th style="padding: 0.75rem; text-align: right;">Tax %</th>'
-                table_html += '<th style="padding: 0.75rem; text-align: right;">Disc %</th>'
-                table_html += '<th style="padding: 0.75rem; text-align: right;">Total</th>'
-                table_html += '</tr>'
+                # Use markdown table for better text wrapping
+                table_html = '<table class="preview-table">'
+                table_html += '<tr><th>Description</th><th class="amount">Qty</th><th class="amount">Price</th><th class="amount">Tax %</th><th class="amount">Disc %</th><th class="amount">Total</th></tr>'
                 
                 for item in items_data:
-                    table_html += '<tr style="border-bottom: 1px solid #e2e8f0;">'
-                    table_html += f'<td style="padding: 0.75rem; white-space: normal; word-wrap: break-word; max-width: 300px;">{item["Description"]}</td>'
-                    table_html += f'<td style="padding: 0.75rem; text-align: right;">{item["Qty"]}</td>'
-                    table_html += f'<td style="padding: 0.75rem; text-align: right;">{item["Price"]}</td>'
-                    table_html += f'<td style="padding: 0.75rem; text-align: right;">{item["Tax %"]}</td>'
-                    table_html += f'<td style="padding: 0.75rem; text-align: right;">{item["Disc %"]}</td>'
-                    table_html += f'<td style="padding: 0.75rem; text-align: right; font-weight: 600;">{item["Total"]}</td>'
+                    table_html += '<tr>'
+                    table_html += f'<td style="white-space: normal; word-wrap: break-word; max-width: 300px;">{item["Description"]}</td>'
+                    table_html += f'<td class="amount">{item["Qty"]}</td>'
+                    table_html += f'<td class="amount">{item["Price"]}</td>'
+                    table_html += f'<td class="amount">{item["Tax %"]}</td>'
+                    table_html += f'<td class="amount">{item["Disc %"]}</td>'
+                    table_html += f'<td class="amount"><strong>{item["Total"]}</strong></td>'
                     table_html += '</tr>'
                 
                 table_html += '</table>'
@@ -1402,7 +1433,7 @@ elif st.session_state.current_page == "settings":
 
 st.markdown("""
     <div class="app-footer">
-        <p>© 2026 Invoice Pro - Professional Invoicing</p>
+        <p>© 2026 Invoice Pro - Professional Invoicing for Caribbean businesses</p>
         <p style="font-size: 0.75rem; margin-top: 0.5rem;">Version 2.0</p>
     </div>
 """, unsafe_allow_html=True)
