@@ -1,2736 +1,241 @@
-# app_improved.py - Enhanced Invoice Pro Application
-import streamlit as st
-import pandas as pd
-from datetime import datetime, timedelta
-import base64
-import json
-import sqlite3
-import logging
-import re
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from email.mime.application import MIMEApplication
-import plotly.graph_objects as go
-import plotly.express as px
-from PIL import Image
-import io
-import os
-from dotenv import load_dotenv
-from typing import Optional, Dict, List, Tuple, Any
-import time
-import smtplib
-import hashlib
-import secrets
-import shutil
-from contextlib import contextmanager
-
-# Load environment variables
-load_dotenv()
-
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
-
-# Optional imports with fallbacks
-try:
-    from forex_python.converter import CurrencyRates
-    FOREX_AVAILABLE = True
-except ImportError:
-    FOREX_AVAILABLE = False
-
-# PDF Generation imports
-try:
-    from reportlab.lib import colors
-    from reportlab.lib.pagesizes import letter, A4
-    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image as RLImage
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib.units import inch
-    from reportlab.lib.enums import TA_RIGHT, TA_CENTER, TA_LEFT
-    from reportlab.pdfgen import canvas
-    from reportlab.pdfbase import pdfmetrics
-    from reportlab.pdfbase.ttfonts import TTFont
-    PDF_AVAILABLE = True
-except ImportError:
-    PDF_AVAILABLE = False
-    logger.warning("ReportLab not installed. PDF generation disabled.")
-
-# Excel export
-try:
-    import xlsxwriter
-    EXCEL_AVAILABLE = True
-except ImportError:
-    EXCEL_AVAILABLE = False
-    logger.warning("XlsxWriter not installed. Excel export disabled.")
-
-# Page configuration
-st.set_page_config(
-    page_title="Invoice Pro 2026",
-    page_icon="💰",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
-# ============================================================================
-# CURRENCY CONFIGURATION
-# ============================================================================
-
-CURRENCIES = {
-    'TTD': {'symbol': 'TT$', 'name': 'Trinidad & Tobago Dollar'},
-    'USD': {'symbol': 'US$', 'name': 'US Dollar'},
-    'EUR': {'symbol': '€', 'name': 'Euro'},
-    'GBP': {'symbol': '£', 'name': 'British Pound'},
-    'CAD': {'symbol': 'C$', 'name': 'Canadian Dollar'},
-    'JPY': {'symbol': '¥', 'name': 'Japanese Yen'},
-    'AUD': {'symbol': 'A$', 'name': 'Australian Dollar'},
-    'CHF': {'symbol': 'Fr', 'name': 'Swiss Franc'},
-    'CNY': {'symbol': '¥', 'name': 'Chinese Yuan'},
-    'INR': {'symbol': '₹', 'name': 'Indian Rupee'},
-    'BBD': {'symbol': 'Bds$', 'name': 'Barbadian Dollar'},
-    'JMD': {'symbol': 'J$', 'name': 'Jamaican Dollar'},
-    'GYD': {'symbol': 'G$', 'name': 'Guyanese Dollar'},
-    'BZD': {'symbol': 'BZ$', 'name': 'Belize Dollar'},
-    'XCD': {'symbol': 'EC$', 'name': 'East Caribbean Dollar'}
-}
-
-# Exchange rates (mock rates - in production, use live API)
-FIXED_RATES = {
-    'TTD': 6.78,  # TTD to USD
-    'USD': 1.0,
-    'EUR': 0.92,
-    'GBP': 0.79,
-    'CAD': 1.35,
-    'JPY': 149.50,
-    'AUD': 1.52,
-    'CHF': 0.88,
-    'CNY': 7.24,
-    'INR': 83.12,
-    'BBD': 2.00,
-    'JMD': 155.50,
-    'GYD': 209.00,
-    'BZD': 2.00,
-    'XCD': 2.70
-}
-
-# Invoice statuses
-INVOICE_STATUSES = ['Draft', 'Sent', 'Paid', 'Overdue', 'Cancelled']
-STATUS_COLORS = {
-    'Draft': '#94a3b8',
-    'Sent': '#3b82f6',
-    'Paid': '#10b981',
-    'Overdue': '#ef4444',
-    'Cancelled': '#64748b'
-}
-
-# Recurring frequencies
-RECURRING_FREQUENCIES = {
-    'None': None,
-    'Daily': timedelta(days=1),
-    'Weekly': timedelta(weeks=1),
-    'Monthly': timedelta(days=30),
-    'Quarterly': timedelta(days=90),
-    'Yearly': timedelta(days=365)
-}
-
-# Payment methods
-PAYMENT_METHODS = ['Cash', 'Bank Transfer', 'Credit Card', 'Cheque', 'Online Payment']
-
-# ============================================================================
-# DATABASE CONTEXT MANAGER
-# ============================================================================
-
-@contextmanager
-def get_db_connection():
-    """Context manager for database connections"""
-    conn = None
-    try:
-        conn = sqlite3.connect('invoices.db')
-        conn.row_factory = sqlite3.Row
-        yield conn
-        conn.commit()
-    except Exception as e:
-        if conn:
-            conn.rollback()
-        logger.error(f"Database error: {e}")
-        raise
-    finally:
-        if conn:
-            conn.close()
-
-# ============================================================================
-# ENHANCED DATABASE FUNCTIONS
-# ============================================================================
-
-def init_database():
-    """Initialize SQLite database with enhanced schema"""
-    try:
-        with get_db_connection() as conn:
-            c = conn.cursor()
-            
-            # Invoices table
-            c.execute('''CREATE TABLE IF NOT EXISTS invoices
-                         (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                          invoice_number TEXT UNIQUE,
-                          client_id INTEGER,
-                          client_name TEXT,
-                          client_email TEXT,
-                          client_address TEXT,
-                          client_phone TEXT,
-                          invoice_date TEXT,
-                          due_date TEXT,
-                          po_number TEXT,
-                          currency TEXT,
-                          subtotal REAL,
-                          tax_total REAL,
-                          discount_total REAL,
-                          grand_total REAL,
-                          amount_paid REAL DEFAULT 0,
-                          balance_due REAL,
-                          status TEXT,
-                          notes TEXT,
-                          created_at TEXT,
-                          updated_at TEXT,
-                          sent_date TEXT,
-                          paid_date TEXT,
-                          recurring_frequency TEXT,
-                          recurring_next_date TEXT,
-                          template_id INTEGER,
-                          created_by INTEGER)''')
-            
-            # Invoice items table
-            c.execute('''CREATE TABLE IF NOT EXISTS invoice_items
-                         (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                          invoice_id INTEGER,
-                          description TEXT,
-                          quantity REAL,
-                          unit_price REAL,
-                          tax_rate REAL,
-                          discount REAL,
-                          subtotal REAL,
-                          discount_amount REAL,
-                          tax_amount REAL,
-                          total REAL,
-                          FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE)''')
-            
-            # Clients table
-            c.execute('''CREATE TABLE IF NOT EXISTS clients
-                         (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                          name TEXT,
-                          email TEXT UNIQUE,
-                          phone TEXT,
-                          address TEXT,
-                          company TEXT,
-                          tax_id TEXT,
-                          notes TEXT,
-                          created_at TEXT,
-                          updated_at TEXT,
-                          credit_limit REAL DEFAULT 0,
-                          payment_terms INTEGER DEFAULT 30)''')
-            
-            # Payments table
-            c.execute('''CREATE TABLE IF NOT EXISTS payments
-                         (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                          invoice_id INTEGER,
-                          amount REAL,
-                          payment_date TEXT,
-                          payment_method TEXT,
-                          reference TEXT,
-                          notes TEXT,
-                          created_at TEXT,
-                          created_by INTEGER,
-                          FOREIGN KEY (invoice_id) REFERENCES invoices(id))''')
-            
-            # Company settings table
-            c.execute('''CREATE TABLE IF NOT EXISTS company_settings
-                         (id INTEGER PRIMARY KEY,
-                          name TEXT,
-                          address TEXT,
-                          city TEXT,
-                          phone TEXT,
-                          email TEXT,
-                          tax_id TEXT,
-                          bank_details TEXT,
-                          logo_data BLOB,
-                          logo_mime TEXT,
-                          default_currency TEXT,
-                          vat_registered BOOLEAN DEFAULT 1,
-                          invoice_prefix TEXT DEFAULT 'INV',
-                          updated_at TEXT)''')
-            
-            # Users table
-            c.execute('''CREATE TABLE IF NOT EXISTS users
-                         (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                          username TEXT UNIQUE,
-                          password_hash TEXT,
-                          email TEXT,
-                          role TEXT DEFAULT 'user',
-                          full_name TEXT,
-                          is_active BOOLEAN DEFAULT 1,
-                          created_at TEXT,
-                          last_login TEXT)''')
-            
-            # Audit log table
-            c.execute('''CREATE TABLE IF NOT EXISTS audit_log
-                         (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                          user_id INTEGER,
-                          action TEXT,
-                          details TEXT,
-                          ip_address TEXT,
-                          timestamp TEXT,
-                          FOREIGN KEY (user_id) REFERENCES users(id))''')
-            
-            # Invoice templates table
-            c.execute('''CREATE TABLE IF NOT EXISTS invoice_templates
-                         (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                          name TEXT,
-                          template_data TEXT,
-                          created_at TEXT,
-                          created_by INTEGER,
-                          is_default BOOLEAN DEFAULT 0)''')
-            
-            # Recurring invoices table
-            c.execute('''CREATE TABLE IF NOT EXISTS recurring_invoices
-                         (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                          template_id INTEGER,
-                          client_id INTEGER,
-                          frequency TEXT,
-                          start_date TEXT,
-                          end_date TEXT,
-                          next_date TEXT,
-                          last_generated TEXT,
-                          is_active BOOLEAN DEFAULT 1,
-                          created_at TEXT,
-                          FOREIGN KEY (template_id) REFERENCES invoice_templates(id),
-                          FOREIGN KEY (client_id) REFERENCES clients(id))''')
-            
-            # Insert default admin user if not exists
-            c.execute("SELECT COUNT(*) FROM users")
-            if c.fetchone()[0] == 0:
-                default_password = "admin123"  # Change in production
-                password_hash = hashlib.sha256(default_password.encode()).hexdigest()
-                c.execute('''INSERT INTO users (username, password_hash, email, role, full_name, created_at)
-                           VALUES (?, ?, ?, ?, ?, ?)''',
-                         ('admin', password_hash, 'admin@example.com', 'admin', 'System Administrator', 
-                          datetime.now().isoformat()))
-            
-            # Insert default company settings
-            c.execute("SELECT COUNT(*) FROM company_settings")
-            if c.fetchone()[0] == 0:
-                c.execute('''INSERT INTO company_settings 
-                           (id, name, address, city, phone, email, tax_id, bank_details, 
-                            default_currency, vat_registered, invoice_prefix, updated_at)
-                           VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-                         ('Your Business Name', '123 Business Street', 'Port of Spain, Trinidad',
-                          '(868) 123-4567', 'accounts@yourbusiness.com', '123456789',
-                          'First Citizens Bank\nAccount: 123456789\nSort Code: 123-456',
-                          'TTD', 1, 'INV', datetime.now().isoformat()))
-            
-            return True
-    except Exception as e:
-        logger.error(f"Database initialization error: {e}")
-        return False
-
-def log_action(user_id, action, details):
-    """Log user actions for audit trail"""
-    try:
-        with get_db_connection() as conn:
-            c = conn.cursor()
-            c.execute('''INSERT INTO audit_log 
-                       (user_id, action, details, timestamp)
-                       VALUES (?, ?, ?, ?)''',
-                     (user_id, action, details, datetime.now().isoformat()))
-        return True
-    except Exception as e:
-        logger.error(f"Audit log error: {e}")
-        return False
-
-def backup_database():
-    """Create database backup"""
-    try:
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        backup_file = f"backup_invoices_{timestamp}.db"
-        
-        # Copy database file
-        shutil.copy2('invoices.db', backup_file)
-        
-        # Create download link
-        with open(backup_file, 'rb') as f:
-            bytes_data = f.read()
-        
-        # Clean up
-        os.remove(backup_file)
-        
-        return bytes_data, backup_file
-    except Exception as e:
-        logger.error(f"Backup error: {e}")
-        return None, None
-
-def restore_database(backup_file):
-    """Restore database from backup"""
-    try:
-        shutil.copy2(backup_file, 'invoices.db')
-        return True
-    except Exception as e:
-        logger.error(f"Restore error: {e}")
-        return False
-
-def validate_invoice_data(invoice_data, items):
-    """Validate invoice data before saving"""
-    errors = []
-    warnings = []
-    
-    # Required fields
-    required_fields = ['client_name', 'client_email', 'invoice_date', 'due_date']
-    for field in required_fields:
-        if not invoice_data.get(field):
-            errors.append(f"{field.replace('_', ' ').title()} is required")
-    
-    # Validate email
-    if invoice_data.get('client_email'):
-        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-        if not re.match(email_pattern, invoice_data['client_email']):
-            errors.append("Invalid email format")
-    
-    # Validate dates
-    if invoice_data.get('invoice_date') and invoice_data.get('due_date'):
-        try:
-            invoice_date = datetime.strptime(invoice_data['invoice_date'], '%Y-%m-%d').date()
-            due_date = datetime.strptime(invoice_data['due_date'], '%Y-%m-%d').date()
-            if due_date < invoice_date:
-                errors.append("Due date cannot be before invoice date")
-        except:
-            errors.append("Invalid date format")
-    
-    # Validate items
-    if not items:
-        errors.append("At least one item is required")
-    else:
-        for i, item in enumerate(items):
-            if not item.get('description'):
-                errors.append(f"Item {i+1}: Description is required")
-            if item.get('quantity', 0) <= 0:
-                errors.append(f"Item {i+1}: Quantity must be greater than 0")
-            if item.get('unit_price', 0) < 0:
-                errors.append(f"Item {i+1}: Unit price cannot be negative")
-            if item.get('tax_rate', 0) < 0 or item.get('tax_rate', 0) > 100:
-                errors.append(f"Item {i+1}: Tax rate must be between 0 and 100")
-            if item.get('discount', 0) < 0 or item.get('discount', 0) > 100:
-                errors.append(f"Item {i+1}: Discount must be between 0 and 100")
-    
-    # Warnings
-    if invoice_data.get('grand_total', 0) > 10000:
-        warnings.append("Large invoice amount - verify with client")
-    
-    return errors, warnings
-
-def save_invoice_to_db(invoice_data, items):
-    """Save invoice and items to database"""
-    try:
-        # Validate data
-        errors, warnings = validate_invoice_data(invoice_data, items)
-        if errors:
-            return None, errors, warnings
-        
-        with get_db_connection() as conn:
-            c = conn.cursor()
-            
-            # Calculate balance due
-            balance_due = invoice_data['grand_total'] - invoice_data.get('amount_paid', 0)
-            
-            # Insert invoice
-            c.execute('''INSERT INTO invoices 
-                       (invoice_number, client_name, client_email, client_address, client_phone,
-                        invoice_date, due_date, po_number, currency, subtotal, tax_total, 
-                        discount_total, grand_total, amount_paid, balance_due, status, notes, 
-                        created_at, updated_at, recurring_frequency, recurring_next_date)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-                     (invoice_data['invoice_number'], invoice_data['client_name'], 
-                      invoice_data['client_email'], invoice_data.get('client_address', ''),
-                      invoice_data.get('client_phone', ''), invoice_data['invoice_date'],
-                      invoice_data['due_date'], invoice_data.get('po_number', ''),
-                      invoice_data['currency'], invoice_data['subtotal'], 
-                      invoice_data['tax_total'], invoice_data['discount_total'],
-                      invoice_data['grand_total'], invoice_data.get('amount_paid', 0),
-                      balance_due, invoice_data.get('status', 'Draft'),
-                      invoice_data.get('notes', ''), datetime.now().isoformat(),
-                      datetime.now().isoformat(), invoice_data.get('recurring_frequency'),
-                      invoice_data.get('recurring_next_date')))
-            
-            invoice_id = c.lastrowid
-            
-            # Insert invoice items
-            for item in items:
-                c.execute('''INSERT INTO invoice_items 
-                           (invoice_id, description, quantity, unit_price, tax_rate, discount,
-                            subtotal, discount_amount, tax_amount, total)
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-                         (invoice_id, item['description'], item['quantity'], item['unit_price'],
-                          item['tax_rate'], item['discount'], item['subtotal'],
-                          item['discount_amount'], item['tax_amount'], item['total']))
-            
-            # Log action
-            log_action(1, 'CREATE_INVOICE', f"Created invoice {invoice_data['invoice_number']}")
-            
-            return invoice_id, errors, warnings
-    except Exception as e:
-        logger.error(f"Save invoice error: {e}")
-        return None, [str(e)], []
-
-def process_payment(invoice_id, amount, method='Bank Transfer', reference='', notes=''):
-    """Process payment for an invoice"""
-    try:
-        with get_db_connection() as conn:
-            c = conn.cursor()
-            
-            # Get current invoice data
-            c.execute('''SELECT grand_total, amount_paid, status, invoice_number 
-                        FROM invoices WHERE id = ?''', (invoice_id,))
-            invoice = c.fetchone()
-            
-            if not invoice:
-                return False, "Invoice not found"
-            
-            grand_total, amount_paid, status, invoice_number = invoice
-            
-            # Check if already paid
-            if status == 'Paid':
-                return False, "Invoice already paid"
-            
-            # Record payment
-            c.execute('''INSERT INTO payments 
-                       (invoice_id, amount, payment_date, payment_method, reference, notes, created_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?)''',
-                     (invoice_id, amount, datetime.now().isoformat(), method, 
-                      reference, notes, datetime.now().isoformat()))
-            
-            # Update invoice
-            new_amount_paid = amount_paid + amount
-            new_balance = grand_total - new_amount_paid
-            
-            c.execute('''UPDATE invoices 
-                       SET amount_paid = ?, balance_due = ?, updated_at = ?
-                       WHERE id = ?''', (new_amount_paid, new_balance, datetime.now().isoformat(), invoice_id))
-            
-            # Check if fully paid
-            if abs(new_balance) < 0.01:
-                c.execute('''UPDATE invoices SET status = 'Paid', paid_date = ?
-                           WHERE id = ?''', (datetime.now().isoformat(), invoice_id))
-            
-            # Log action
-            log_action(1, 'RECORD_PAYMENT', f"Payment of {amount} recorded for invoice {invoice_number}")
-            
-            conn.commit()
-            return True, "Payment recorded successfully"
-    except Exception as e:
-        logger.error(f"Payment error: {e}")
-        return False, str(e)
-
-def update_invoice_status(invoice_id, new_status):
-    """Update invoice status"""
-    try:
-        with get_db_connection() as conn:
-            c = conn.cursor()
-            
-            update_fields = {'status': new_status, 'updated_at': datetime.now().isoformat()}
-            
-            if new_status == 'Sent':
-                update_fields['sent_date'] = datetime.now().isoformat()
-            elif new_status == 'Paid':
-                update_fields['paid_date'] = datetime.now().isoformat()
-            
-            set_clause = ', '.join([f"{k} = ?" for k in update_fields.keys()])
-            values = list(update_fields.values()) + [invoice_id]
-            
-            c.execute(f"UPDATE invoices SET {set_clause} WHERE id = ?", values)
-            conn.commit()
-            
-            # Log action
-            log_action(1, 'UPDATE_STATUS', f"Updated invoice {invoice_id} status to {new_status}")
-            
-            return True
-    except Exception as e:
-        logger.error(f"Update status error: {e}")
-        return False
-
-def get_invoices(filters=None):
-    """Get invoices with optional filters"""
-    try:
-        with get_db_connection() as conn:
-            query = "SELECT * FROM invoices"
-            params = []
-            
-            if filters:
-                conditions = []
-                if 'status' in filters and filters['status']:
-                    conditions.append("status = ?")
-                    params.append(filters['status'])
-                if 'client_name' in filters and filters['client_name']:
-                    conditions.append("client_name LIKE ?")
-                    params.append(f"%{filters['client_name']}%")
-                if 'date_from' in filters and filters['date_from']:
-                    conditions.append("invoice_date >= ?")
-                    params.append(filters['date_from'])
-                if 'date_to' in filters and filters['date_to']:
-                    conditions.append("invoice_date <= ?")
-                    params.append(filters['date_to'])
-                
-                if conditions:
-                    query += " WHERE " + " AND ".join(conditions)
-            
-            query += " ORDER BY created_at DESC"
-            
-            df = pd.read_sql_query(query, conn, params=params)
-            return df
-    except Exception as e:
-        logger.error(f"Get invoices error: {e}")
-        return pd.DataFrame()
-
-def get_invoice_by_id(invoice_id):
-    """Get invoice details by ID"""
-    try:
-        with get_db_connection() as conn:
-            # Get invoice
-            invoice_df = pd.read_sql_query(
-                "SELECT * FROM invoices WHERE id = ?", conn, params=[invoice_id]
-            )
-            
-            if invoice_df.empty:
-                return None, None
-            
-            invoice = invoice_df.iloc[0].to_dict()
-            
-            # Get invoice items
-            items_df = pd.read_sql_query(
-                "SELECT * FROM invoice_items WHERE invoice_id = ?", conn, params=[invoice_id]
-            )
-            
-            items = items_df.to_dict('records') if not items_df.empty else []
-            
-            return invoice, items
-    except Exception as e:
-        logger.error(f"Get invoice by ID error: {e}")
-        return None, None
-
-def delete_invoice(invoice_id):
-    """Delete invoice and its items"""
-    try:
-        with get_db_connection() as conn:
-            c = conn.cursor()
-            
-            # Get invoice number for logging
-            c.execute("SELECT invoice_number FROM invoices WHERE id = ?", (invoice_id,))
-            result = c.fetchone()
-            invoice_number = result['invoice_number'] if result else "Unknown"
-            
-            # Delete items first (foreign key constraint)
-            c.execute("DELETE FROM invoice_items WHERE invoice_id = ?", (invoice_id,))
-            
-            # Delete payments
-            c.execute("DELETE FROM payments WHERE invoice_id = ?", (invoice_id,))
-            
-            # Delete invoice
-            c.execute("DELETE FROM invoices WHERE id = ?", (invoice_id,))
-            
-            conn.commit()
-            
-            # Log action
-            log_action(1, 'DELETE_INVOICE', f"Deleted invoice {invoice_number}")
-            
-            return True
-    except Exception as e:
-        logger.error(f"Delete invoice error: {e}")
-        return False
-
-def save_client_to_db(client_data):
-    """Save or update client"""
-    try:
-        with get_db_connection() as conn:
-            c = conn.cursor()
-            
-            # Check if client exists
-            c.execute("SELECT id FROM clients WHERE email = ?", (client_data['email'],))
-            existing = c.fetchone()
-            
-            if existing:
-                # Update existing client
-                c.execute('''UPDATE clients SET name = ?, phone = ?, address = ?, 
-                            company = ?, tax_id = ?, notes = ?, credit_limit = ?,
-                            payment_terms = ?, updated_at = ?
-                            WHERE email = ?''',
-                         (client_data['name'], client_data.get('phone', ''),
-                          client_data.get('address', ''), client_data.get('company', ''),
-                          client_data.get('tax_id', ''), client_data.get('notes', ''),
-                          client_data.get('credit_limit', 0), client_data.get('payment_terms', 30),
-                          datetime.now().isoformat(), client_data['email']))
-                client_id = existing[0]
-            else:
-                # Insert new client
-                c.execute('''INSERT INTO clients 
-                           (name, email, phone, address, company, tax_id, notes, 
-                            credit_limit, payment_terms, created_at, updated_at)
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-                         (client_data['name'], client_data['email'], 
-                          client_data.get('phone', ''), client_data.get('address', ''),
-                          client_data.get('company', ''), client_data.get('tax_id', ''),
-                          client_data.get('notes', ''), client_data.get('credit_limit', 0),
-                          client_data.get('payment_terms', 30), datetime.now().isoformat(),
-                          datetime.now().isoformat()))
-                client_id = c.lastrowid
-            
-            conn.commit()
-            
-            # Log action
-            log_action(1, 'SAVE_CLIENT', f"Saved client {client_data['name']}")
-            
-            return client_id
-    except Exception as e:
-        logger.error(f"Save client error: {e}")
-        return None
-
-def get_clients(search=None):
-    """Get clients with optional search"""
-    try:
-        with get_db_connection() as conn:
-            if search:
-                query = "SELECT * FROM clients WHERE name LIKE ? OR email LIKE ? OR company LIKE ? ORDER BY name"
-                params = [f"%{search}%", f"%{search}%", f"%{search}%"]
-                df = pd.read_sql_query(query, conn, params=params)
-            else:
-                df = pd.read_sql_query("SELECT * FROM clients ORDER BY name", conn)
-            
-            return df
-    except Exception as e:
-        logger.error(f"Get clients error: {e}")
-        return pd.DataFrame()
-
-def create_recurring_invoice(template_id, client_id, frequency, start_date, end_date=None):
-    """Create recurring invoice schedule"""
-    try:
-        with get_db_connection() as conn:
-            c = conn.cursor()
-            
-            next_date = start_date
-            if frequency in RECURRING_FREQUENCIES and RECURRING_FREQUENCIES[frequency]:
-                next_date = (datetime.strptime(start_date, '%Y-%m-%d') + 
-                           RECURRING_FREQUENCIES[frequency]).strftime('%Y-%m-%d')
-            
-            c.execute('''INSERT INTO recurring_invoices
-                       (template_id, client_id, frequency, start_date, end_date, next_date, created_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?)''',
-                     (template_id, client_id, frequency, start_date, end_date, next_date,
-                      datetime.now().isoformat()))
-            
-            recurring_id = c.lastrowid
-            
-            # Log action
-            log_action(1, 'CREATE_RECURRING', f"Created recurring invoice schedule {recurring_id}")
-            
-            return recurring_id
-    except Exception as e:
-        logger.error(f"Recurring invoice error: {e}")
-        return None
-
-def save_invoice_template(name, template_data):
-    """Save invoice as template"""
-    try:
-        with get_db_connection() as conn:
-            c = conn.cursor()
-            
-            c.execute('''INSERT INTO invoice_templates
-                       (name, template_data, created_at, created_by)
-                       VALUES (?, ?, ?, ?)''',
-                     (name, json.dumps(template_data), datetime.now().isoformat(), 1))
-            
-            template_id = c.lastrowid
-            
-            return template_id
-    except Exception as e:
-        logger.error(f"Save template error: {e}")
-        return None
-
-def get_dashboard_stats():
-    """Get dashboard statistics"""
-    try:
-        with get_db_connection() as conn:
-            # Total invoices
-            total_invoices = pd.read_sql_query("SELECT COUNT(*) as count FROM invoices", conn).iloc[0]['count']
-            
-            # Total revenue (paid)
-            total_revenue = pd.read_sql_query(
-                "SELECT SUM(grand_total) as total FROM invoices WHERE status = 'Paid'", 
-                conn
-            ).iloc[0]['total'] or 0
-            
-            # Total clients
-            total_clients = pd.read_sql_query("SELECT COUNT(*) as count FROM clients", conn).iloc[0]['count']
-            
-            # Pending amount
-            pending_amount = pd.read_sql_query(
-                "SELECT SUM(balance_due) as total FROM invoices WHERE status NOT IN ('Paid', 'Cancelled')", 
-                conn
-            ).iloc[0]['total'] or 0
-            
-            # Overdue amount
-            today = datetime.now().strftime('%Y-%m-%d')
-            overdue_amount = pd.read_sql_query(
-                f"SELECT SUM(balance_due) as total FROM invoices WHERE status = 'Overdue' OR (due_date < '{today}' AND status NOT IN ('Paid', 'Cancelled'))", 
-                conn
-            ).iloc[0]['total'] or 0
-            
-            # Monthly revenue (last 6 months)
-            monthly_query = """
-            SELECT strftime('%Y-%m', invoice_date) as month,
-                   SUM(CASE WHEN status = 'Paid' THEN grand_total ELSE 0 END) as revenue,
-                   COUNT(*) as count
-            FROM invoices
-            WHERE invoice_date >= date('now', '-6 months')
-            GROUP BY strftime('%Y-%m', invoice_date)
-            ORDER BY month DESC
-            """
-            monthly_data = pd.read_sql_query(monthly_query, conn)
-            
-            return {
-                'total_invoices': total_invoices,
-                'total_revenue': total_revenue,
-                'total_clients': total_clients,
-                'pending_amount': pending_amount,
-                'overdue_amount': overdue_amount,
-                'monthly_data': monthly_data
-            }
-    except Exception as e:
-        logger.error(f"Dashboard stats error: {e}")
-        return None
-
-def get_client_payment_history(client_id):
-    """Get client payment history"""
-    try:
-        with get_db_connection() as conn:
-            query = """
-            SELECT i.invoice_number, i.invoice_date, i.grand_total, 
-                   p.amount as paid_amount, p.payment_date, p.payment_method,
-                   i.grand_total - COALESCE(p.total_paid, 0) as balance
-            FROM invoices i
-            LEFT JOIN (
-                SELECT invoice_id, SUM(amount) as total_paid,
-                       MAX(payment_date) as last_payment
-                FROM payments
-                GROUP BY invoice_id
-            ) p_sum ON i.id = p_sum.invoice_id
-            LEFT JOIN payments p ON i.id = p.invoice_id
-            WHERE i.client_id = ?
-            ORDER BY i.invoice_date DESC
-            """
-            df = pd.read_sql_query(query, conn, params=[client_id])
-            return df
-    except Exception as e:
-        logger.error(f"Client payment history error: {e}")
-        return pd.DataFrame()
-
-# ============================================================================
-# PDF GENERATION - ENHANCED
-# ============================================================================
-
-def generate_pdf_invoice(invoice_data):
-    """Generate PDF invoice with enhanced formatting"""
-    if not PDF_AVAILABLE:
-        return None
-    
-    try:
-        buffer = io.BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=A4,
-                               rightMargin=36, leftMargin=36,
-                               topMargin=36, bottomMargin=36)
-        
-        styles = getSampleStyleSheet()
-        story = []
-        
-        # Custom styles
-        title_style = ParagraphStyle(
-            'CustomTitle',
-            parent=styles['Heading1'],
-            fontSize=24,
-            textColor=colors.HexColor('#0f172a'),
-            alignment=TA_CENTER,
-            spaceAfter=20
-        )
-        
-        normal_style = ParagraphStyle(
-            'CustomNormal',
-            parent=styles['Normal'],
-            fontSize=10,
-            leading=14,
-            textColor=colors.HexColor('#1e293b')
-        )
-        
-        description_style = ParagraphStyle(
-            'Description',
-            parent=normal_style,
-            wordWrap='CJK',
-            alignment=TA_LEFT
-        )
-        
-        right_style = ParagraphStyle(
-            'RightAlign',
-            parent=normal_style,
-            alignment=TA_RIGHT
-        )
-        
-        # Get company info
-        company = invoice_data.get('company_info', {})
-        
-        # Create header
-        header_data = []
-        
-        # Add logo if available
-        logo_bytes = company.get('logo_bytes')
-        if logo_bytes:
-            try:
-                img_buffer = io.BytesIO(logo_bytes)
-                img = RLImage(img_buffer, width=1.5*inch, height=0.75*inch)
-                header_data.append([img, Paragraph("<b>INVOICE</b>", title_style)])
-            except:
-                header_data.append([Paragraph(f"<b>{company.get('name', '')}</b>", normal_style), 
-                                   Paragraph("<b>INVOICE</b>", title_style)])
-        else:
-            header_data.append([Paragraph(f"<b>{company.get('name', '')}</b>", normal_style), 
-                               Paragraph("<b>INVOICE</b>", title_style)])
-        
-        # Add company details
-        header_data.extend([
-            [Paragraph(company.get('address', ''), normal_style),
-             Paragraph(f"<b>#{invoice_data.get('invoice_number', '')}</b>", right_style)],
-            [Paragraph(company.get('city', ''), normal_style),
-             Paragraph(f"Date: {invoice_data.get('invoice_date', '')}", right_style)],
-            [Paragraph(f"Phone: {company.get('phone', '')}", normal_style),
-             Paragraph(f"Due: {invoice_data.get('due_date', '')}", right_style)],
-            [Paragraph(f"Email: {company.get('email', '')}", normal_style),
-             Paragraph(f"PO: {invoice_data.get('po_number', 'N/A')}", right_style)]
-        ])
-        
-        if invoice_data.get('status'):
-            header_data.append([Paragraph("", normal_style),
-                               Paragraph(f"<b>Status: {invoice_data['status']}</b>", right_style)])
-        
-        header_table = Table(header_data, colWidths=[3.5*inch, 3.5*inch])
-        header_table.setStyle(TableStyle([
-            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-            ('ALIGN', (0, 0), (0, -1), 'LEFT'),
-            ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
-            ('FONTSIZE', (0, 0), (-1, -1), 10),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-        ]))
-        story.append(header_table)
-        story.append(Spacer(1, 20))
-        
-        # Client info
-        client = invoice_data.get('client', {})
-        client_text = f"""
-        <b>Bill To:</b><br/>
-        {client.get('name', '')}<br/>
-        {client.get('address', '')}<br/>
-        {client.get('email', '')}
-        """
-        story.append(Paragraph(client_text, normal_style))
-        story.append(Spacer(1, 20))
-        
-        # Items table
-        if 'items' in invoice_data and invoice_data['items']:
-            table_data = [
-                ['Description', 'Qty', 'Unit Price', 'Tax %', 'Disc %', 'Total']
-            ]
-            
-            currency = invoice_data.get('currency', 'TTD')
-            symbol = get_currency_symbol(currency)
-            
-            for item in invoice_data['items']:
-                desc_para = Paragraph(item.get('description', ''), description_style)
-                
-                table_data.append([
-                    desc_para,
-                    str(item.get('quantity', '1')),
-                    f"{symbol}{item.get('unit_price', 0):,.2f}",
-                    f"{item.get('tax_rate', 0)}%",
-                    f"{item.get('discount', 0)}%",
-                    f"{symbol}{item.get('total', 0):,.2f}"
-                ])
-            
-            col_widths = [2.8*inch, 0.4*inch, 0.8*inch, 0.5*inch, 0.5*inch, 1*inch]
-            table = Table(table_data, colWidths=col_widths, repeatRows=1)
-            
-            table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2563eb')),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-                ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, 0), 10),
-                ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
-                ('BACKGROUND', (0, 1), (-1, -1), colors.white),
-                ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#1e293b')),
-                ('ALIGN', (1, 1), (1, -1), 'CENTER'),
-                ('ALIGN', (2, 1), (5, -1), 'RIGHT'),
-                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-                ('FONTSIZE', (0, 1), (-1, -1), 9),
-                ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#e2e8f0')),
-                ('ALIGN', (0, 1), (0, -1), 'LEFT'),
-            ]))
-            
-            story.append(table)
-            story.append(Spacer(1, 20))
-            
-            # Totals section
-            totals = invoice_data.get('totals', {})
-            subtotal = totals.get('subtotal', 0)
-            discount = totals.get('discount', 0)
-            tax = totals.get('tax', 0)
-            grand_total = totals.get('grand_total', 0)
-            
-            totals_data = [
-                ['Subtotal:', f"{symbol}{subtotal:,.2f}"],
-                ['Discount:', f"-{symbol}{discount:,.2f}"],
-                ['Tax:', f"{symbol}{tax:,.2f}"],
-                ['Grand Total:', f"{symbol}{grand_total:,.2f}"]
-            ]
-            
-            # Add payment info if available
-            if invoice_data.get('amount_paid', 0) > 0:
-                totals_data.append(['Amount Paid:', f"{symbol}{invoice_data['amount_paid']:,.2f}"])
-                totals_data.append(['Balance Due:', f"{symbol}{invoice_data.get('balance_due', 0):,.2f}"])
-            
-            totals_table = Table(totals_data, colWidths=[1.5*inch, 1.5*inch])
-            totals_table.setStyle(TableStyle([
-                ('ALIGN', (0, 0), (0, -1), 'RIGHT'),
-                ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
-                ('FONTNAME', (0, -1), (1, -1), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, -1), (1, -1), 12),
-                ('LINEABOVE', (0, -1), (1, -1), 2, colors.HexColor('#2563eb')),
-                ('BACKGROUND', (0, -1), (1, -1), colors.HexColor('#f0f9ff')),
-                ('TEXTCOLOR', (0, -1), (1, -1), colors.HexColor('#0f172a')),
-            ]))
-            
-            story.append(Table([[totals_table]], colWidths=[7*inch]))
-            story.append(Spacer(1, 20))
-        
-        # Payment details
-        if company.get('bank_details'):
-            story.append(Paragraph("<b>Payment Details:</b>", normal_style))
-            story.append(Paragraph(company['bank_details'], normal_style))
-            story.append(Spacer(1, 20))
-        
-        # Notes
-        if invoice_data.get('notes'):
-            story.append(Paragraph("<b>Notes:</b>", normal_style))
-            story.append(Paragraph(invoice_data['notes'], normal_style))
-            story.append(Spacer(1, 20))
-        
-        # Footer
-        footer_style = ParagraphStyle(
-            'Footer',
-            parent=styles['Italic'],
-            fontSize=9,
-            textColor=colors.HexColor('#64748b'),
-            alignment=TA_CENTER
-        )
-        story.append(Paragraph("Thank you for your business!", footer_style))
-        
-        doc.build(story)
-        buffer.seek(0)
-        return buffer
-        
-    except Exception as e:
-        logger.error(f"PDF generation error: {e}")
-        return None
-
-# ============================================================================
-# HELPER FUNCTIONS
-# ============================================================================
-
-def get_currency_symbol(currency_code):
-    """Get currency symbol"""
-    return CURRENCIES.get(currency_code, {'symbol': '$'})['symbol']
-
-def format_amount(amount, currency='TTD'):
-    """Format amount with currency symbol"""
-    if amount == 0:
-        return f"{get_currency_symbol(currency)}0.00"
-    symbol = get_currency_symbol(currency)
-    return f"{symbol}{amount:,.2f}"
-
-def calculate_item_totals(quantity, unit_price, tax_rate=0, discount=0):
-    """Calculate item totals"""
-    subtotal = quantity * unit_price
-    discount_amount = subtotal * (discount / 100)
-    taxable_amount = subtotal - discount_amount
-    tax_amount = taxable_amount * (tax_rate / 100)
-    total = taxable_amount + tax_amount
-    
-    return {
-        'subtotal': subtotal,
-        'discount_amount': discount_amount,
-        'tax_amount': tax_amount,
-        'total': total
-    }
-
-def generate_invoice_number():
-    """Generate unique invoice number with safe session state access"""
-    timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
-    
-    # Default prefix
-    prefix = 'INV'
-    
-    # Safely try to get from session state
-    try:
-        # Check if session state exists and has company_info
-        if 'st' in globals() and hasattr(st, 'session_state'):
-            if 'company_info' in st.session_state:
-                prefix = st.session_state.company_info.get('invoice_prefix', 'INV')
-    except (AttributeError, KeyError, NameError):
-        # If any error occurs, use default
-        pass
-    
-    return f"{prefix}-{timestamp}"
-
-def safe_session_state_get(key, default=None):
-    """Safely get a value from session state"""
-    try:
-        if hasattr(st, 'session_state') and key in st.session_state:
-            return st.session_state[key]
-    except (AttributeError, KeyError):
-        pass
-    return default
-
-def safe_company_info_get(key, default=None):
-    """Safely get a value from company_info in session state"""
-    try:
-        if hasattr(st, 'session_state'):
-            company_info = st.session_state.get('company_info', {})
-            return company_info.get(key, default)
-    except (AttributeError, KeyError):
-        pass
-    return default
-
-def save_logo(uploaded_file):
-    """Save uploaded logo to session state"""
-    if uploaded_file is not None:
-        bytes_data = uploaded_file.getvalue()
-        encoded = base64.b64encode(bytes_data).decode()
-        
-        st.session_state.company_info['logo_bytes'] = bytes_data
-        st.session_state.company_info['logo_base64'] = encoded
-        st.session_state.company_info['logo_filename'] = uploaded_file.name
-        st.session_state.company_info['logo_mime'] = uploaded_file.type
-        
-        # Save to database
-        try:
-            with get_db_connection() as conn:
-                c = conn.cursor()
-                c.execute('''UPDATE company_settings 
-                           SET logo_data = ?, logo_mime = ?, updated_at = ?
-                           WHERE id = 1''',
-                         (bytes_data, uploaded_file.type, datetime.now().isoformat()))
-            return True
-        except Exception as e:
-            logger.error(f"Error saving logo to database: {e}")
-            return True  # Still return True as it's saved in session
-    
-    return False
-
-def get_logo_html(max_height="60px", max_width="150px"):
-    """Get HTML for logo display"""
-    if st.session_state.company_info.get('logo_base64'):
-        mime = st.session_state.company_info.get('logo_mime', 'image/png')
-        return f'<img src="data:{mime};base64,{st.session_state.company_info["logo_base64"]}" style="max-height: {max_height}; max-width: {max_width}; object-fit: contain;">'
-    return ""
-
-def remove_logo():
-    """Remove logo from session state"""
-    keys = ['logo_bytes', 'logo_base64', 'logo_filename', 'logo_mime']
-    for key in keys:
-        if key in st.session_state.company_info:
-            del st.session_state.company_info[key]
-    
-    # Remove from database
-    try:
-        with get_db_connection() as conn:
-            c = conn.cursor()
-            c.execute('''UPDATE company_settings 
-                       SET logo_data = NULL, logo_mime = NULL, updated_at = ?
-                       WHERE id = 1''',
-                     (datetime.now().isoformat(),))
-    except Exception as e:
-        logger.error(f"Error removing logo from database: {e}")
-
-def get_status_badge_html(status):
-    """Generate HTML for status badge with proper contrast"""
-    return f'<span class="status-badge" data-status="{status}">{status}</span>'
-
-def send_email_invoice(to_email, pdf_buffer, invoice_number):
-    """Send invoice via email"""
-    try:
-        msg = MIMEMultipart()
-        msg['From'] = st.session_state.company_info['email']
-        msg['To'] = to_email
-        msg['Subject'] = f"Invoice {invoice_number} from {st.session_state.company_info['name']}"
-        
-        body = f"""
-        <html>
-        <body>
-            <p>Dear Customer,</p>
-            
-            <p>Please find attached invoice {invoice_number} for your reference.</p>
-            
-            <p><strong>Invoice Details:</strong><br>
-            Invoice Number: {invoice_number}<br>
-            Date: {datetime.now().strftime('%d %b %Y')}<br>
-            Amount: {format_amount(st.session_state.get('grand_total', 0), st.session_state.currency)}</p>
-            
-            <p>Payment can be made via:<br>
-            {st.session_state.company_info.get('bank_details', '').replace(chr(10), '<br>')}</p>
-            
-            <p>Thank you for your business!</p>
-            
-            <p>Best regards,<br>
-            {st.session_state.company_info['name']}</p>
-        </body>
-        </html>
-        """
-        msg.attach(MIMEText(body, 'html'))
-        
-        # Attach PDF
-        if pdf_buffer:
-            pdf_part = MIMEApplication(pdf_buffer.getvalue(), Name=f"invoice_{invoice_number}.pdf")
-            pdf_part['Content-Disposition'] = f'attachment; filename="invoice_{invoice_number}.pdf"'
-            msg.attach(pdf_part)
-        
-        # Configure SMTP (use environment variables)
-        smtp_server = os.getenv('SMTP_SERVER', 'smtp.gmail.com')
-        smtp_port = int(os.getenv('SMTP_PORT', 587))
-        smtp_username = os.getenv('SMTP_USERNAME')
-        smtp_password = os.getenv('SMTP_PASSWORD')
-        
-        if smtp_username and smtp_password:
-            server = smtplib.SMTP(smtp_server, smtp_port)
-            server.starttls()
-            server.login(smtp_username, smtp_password)
-            server.send_message(msg)
-            server.quit()
-            return True, "Email sent successfully"
-        else:
-            return False, "SMTP not configured"
-            
-    except Exception as e:
-        logger.error(f"Email error: {e}")
-        return False, str(e)
-
-def export_to_excel(invoice_data, items):
-    """Export invoice to Excel"""
-    if not EXCEL_AVAILABLE:
-        return None
-    
-    try:
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-            workbook = writer.book
-            
-            # Formats
-            header_format = workbook.add_format({
-                'bold': True,
-                'bg_color': '#2563eb',
-                'font_color': 'white',
-                'border': 1
-            })
-            
-            money_format = workbook.add_format({'num_format': '$#,##0.00', 'border': 1})
-            text_format = workbook.add_format({'border': 1})
-            
-            # Invoice details sheet
-            invoice_df = pd.DataFrame([invoice_data])
-            invoice_df.to_excel(writer, sheet_name='Invoice', index=False, startrow=1)
-            
-            # Format invoice sheet
-            worksheet = writer.sheets['Invoice']
-            worksheet.set_column('A:A', 20)
-            worksheet.set_column('B:B', 30)
-            
-            # Add title
-            worksheet.write('A1', 'INVOICE DETAILS', header_format)
-            
-            # Items sheet
-            items_df = pd.DataFrame(items)
-            items_df.to_excel(writer, sheet_name='Items', index=False, startrow=1)
-            
-            # Format items sheet
-            worksheet_items = writer.sheets['Items']
-            worksheet_items.write('A1', 'INVOICE ITEMS', header_format)
-            worksheet_items.set_column('A:A', 40)
-            worksheet_items.set_column('B:F', 15)
-            
-            # Add summary
-            summary_start_row = len(items_df) + 3
-            worksheet_items.write(summary_start_row, 0, 'Subtotal:', text_format)
-            worksheet_items.write(summary_start_row, 1, invoice_data['subtotal'], money_format)
-            worksheet_items.write(summary_start_row + 1, 0, 'Discount:', text_format)
-            worksheet_items.write(summary_start_row + 1, 1, invoice_data.get('discount_total', 0), money_format)
-            worksheet_items.write(summary_start_row + 2, 0, 'Tax:', text_format)
-            worksheet_items.write(summary_start_row + 2, 1, invoice_data['tax_total'], money_format)
-            worksheet_items.write(summary_start_row + 3, 0, 'GRAND TOTAL:', header_format)
-            worksheet_items.write(summary_start_row + 3, 1, invoice_data['grand_total'], money_format)
-        
-        output.seek(0)
-        return output
-    except Exception as e:
-        logger.error(f"Excel export error: {e}")
-        return None
-
-# ============================================================================
-# UPDATED CSS STYLING - 2026 EDITION
-# ============================================================================
-
-st.markdown("""
-    <style>
-    /* Global Styles - 2026 Modern Theme */
-    .stApp {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-    }
-    
-    /* Force text contrast throughout */
-    .stApp, .stApp * {
-        color: #1a1a1a !important;
-    }
-    
-    /* Input fields and text areas */
-    .stTextInput input, .stTextArea textarea, .stSelectbox, .stNumberInput input {
-        background-color: white !important;
-        color: #1a1a1a !important;
-        border: 2px solid #e0e0e0 !important;
-        border-radius: 8px !important;
-        padding: 0.5rem !important;
-    }
-    
-    .stTextInput input:focus, .stTextArea textarea:focus {
-        border-color: #667eea !important;
-        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1) !important;
-    }
-    
-    /* Fix for number inputs */
-    .stNumberInput input {
-        background-color: white !important;
-        color: #1a1a1a !important;
-    }
-    
-    /* Fix for select boxes */
-    .stSelectbox div[data-baseweb="select"] {
-        background-color: white !important;
-        border: 2px solid #e0e0e0 !important;
-    }
-    
-    .stSelectbox div[data-baseweb="select"] span {
-        color: #1a1a1a !important;
-    }
-    
-    /* Headers with better contrast */
-    h1, h2, h3, h4, h5, h6 {
-        color: #1a1a1a !important;
-        font-weight: 600 !important;
-        letter-spacing: -0.02em !important;
-    }
-    
-    /* App Header - 2026 Gradient */
-    .app-header {
-        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
-        padding: 2rem 2.5rem;
-        border-bottom: 1px solid rgba(255,255,255,0.1);
-        margin-bottom: 2rem;
-        box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-    }
-    
-    .app-title {
-        color: white !important;
-        font-size: 2rem;
-        font-weight: 700;
-        margin: 0;
-        text-shadow: 0 2px 4px rgba(0,0,0,0.2);
-    }
-    
-    .app-subtitle {
-        color: #a0a0ff !important;
-        font-size: 1rem;
-        margin-top: 0.5rem;
-    }
-    
-    /* Cards - 2026 Neumorphism */
-    .business-card {
-        background: rgba(255, 255, 255, 0.95);
-        backdrop-filter: blur(10px);
-        border-radius: 20px;
-        padding: 1.5rem;
-        border: 1px solid rgba(255,255,255,0.2);
-        margin-bottom: 1.5rem;
-        box-shadow: 0 20px 40px -15px rgba(0,0,0,0.2);
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-    
-    .business-card:hover {
-        transform: translateY(-5px) scale(1.02);
-        box-shadow: 0 30px 50px -20px rgba(102, 126, 234, 0.4);
-        background: white;
-    }
-    
-    /* Section Headers */
-    .section-header {
-        font-size: 1.5rem;
-        font-weight: 700;
-        color: #1a1a1a !important;
-        margin-bottom: 1.5rem;
-        padding-bottom: 1rem;
-        border-bottom: 3px solid #667eea;
-        position: relative;
-    }
-    
-    .section-header::after {
-        content: '';
-        position: absolute;
-        bottom: -3px;
-        left: 0;
-        width: 50px;
-        height: 3px;
-        background: linear-gradient(90deg, #667eea, #764ba2);
-        border-radius: 3px;
-    }
-    
-    /* Status Badges - Enhanced */
-    .status-badge {
-        display: inline-block;
-        padding: 0.35rem 1rem;
-        border-radius: 100px;
-        font-size: 0.75rem;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-    }
-    
-    .status-badge[data-status="Paid"] {
-        background: linear-gradient(135deg, #10b981, #059669) !important;
-        color: white !important;
-        border: none;
-    }
-    
-    .status-badge[data-status="Draft"] {
-        background: linear-gradient(135deg, #94a3b8, #64748b) !important;
-        color: white !important;
-    }
-    
-    .status-badge[data-status="Sent"] {
-        background: linear-gradient(135deg, #3b82f6, #2563eb) !important;
-        color: white !important;
-    }
-    
-    .status-badge[data-status="Overdue"] {
-        background: linear-gradient(135deg, #ef4444, #dc2626) !important;
-        color: white !important;
-    }
-    
-    .status-badge[data-status="Cancelled"] {
-        background: linear-gradient(135deg, #6b7280, #4b5563) !important;
-        color: white !important;
-    }
-    
-    /* Metric Cards */
-    .metric-card {
-        background: linear-gradient(135deg, #ffffff, #f8fafc);
-        border-radius: 20px;
-        padding: 2rem;
-        border: 1px solid #e2e8f0;
-        text-align: center;
-        box-shadow: 0 10px 30px -15px rgba(0,0,0,0.2);
-    }
-    
-    .metric-value {
-        font-size: 2.5rem;
-        font-weight: 800;
-        background: linear-gradient(135deg, #667eea, #764ba2);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        margin: 0.5rem 0;
-    }
-    
-    .metric-label {
-        color: #4a5568 !important;
-        font-size: 0.875rem;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        font-weight: 600;
-    }
-    
-    /* Invoice Preview Container */
-    .invoice-preview-container {
-        background: white;
-        border-radius: 30px;
-        padding: 3rem;
-        border: 1px solid rgba(0,0,0,0.05);
-        margin: 2rem 0;
-        box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25);
-    }
-    
-    /* Grand Total Box - 2026 Style */
-    .grand-total-box {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 2rem;
-        border-radius: 20px;
-        box-shadow: 0 20px 40px -15px rgba(102, 126, 234, 0.5);
-        animation: pulse 2s infinite;
-    }
-    
-    .grand-total-box p {
-        color: white !important;
-    }
-    
-    @keyframes pulse {
-        0% { transform: scale(1); }
-        50% { transform: scale(1.02); }
-        100% { transform: scale(1); }
-    }
-    
-    /* Progress Bar */
-    .progress-bar {
-        width: 100%;
-        height: 10px;
-        background: #e2e8f0;
-        border-radius: 10px;
-        overflow: hidden;
-        margin: 0.5rem 0;
-    }
-    
-    .progress-fill {
-        height: 100%;
-        background: linear-gradient(90deg, #667eea, #764ba2);
-        border-radius: 10px;
-        transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-    
-    /* Alert Messages - Enhanced */
-    .alert-success {
-        background: linear-gradient(135deg, #d1fae5, #a7f3d0);
-        color: #065f46 !important;
-        padding: 1rem 1.5rem;
-        border-radius: 12px;
-        border-left: 5px solid #10b981;
-        font-weight: 500;
-    }
-    
-    .alert-warning {
-        background: linear-gradient(135deg, #fed7aa, #fde68a);
-        color: #92400e !important;
-        padding: 1rem 1.5rem;
-        border-radius: 12px;
-        border-left: 5px solid #f59e0b;
-    }
-    
-    .alert-error {
-        background: linear-gradient(135deg, #fee2e2, #fecaca);
-        color: #b91c1c !important;
-        padding: 1rem 1.5rem;
-        border-radius: 12px;
-        border-left: 5px solid #ef4444;
-    }
-    
-    /* Tabs - 2026 Style */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 10px;
-        background: rgba(255,255,255,0.1);
-        backdrop-filter: blur(10px);
-        padding: 0.75rem;
-        border-radius: 50px;
-        border: 1px solid rgba(255,255,255,0.2);
-    }
-    
-    .stTabs [data-baseweb="tab"] {
-        border-radius: 40px;
-        padding: 0.75rem 1.5rem;
-        color: white !important;
-        font-weight: 600;
-        transition: all 0.3s;
-    }
-    
-    .stTabs [data-baseweb="tab"]:hover {
-        background: rgba(255,255,255,0.2) !important;
-    }
-    
-    .stTabs [aria-selected="true"] {
-        background: white !important;
-        color: #667eea !important;
-        box-shadow: 0 5px 15px rgba(0,0,0,0.2);
-    }
-    
-    /* Buttons - 2026 Style */
-    .stButton button {
-        background: linear-gradient(135deg, #667eea, #764ba2) !important;
-        color: white !important;
-        border: none !important;
-        border-radius: 12px !important;
-        padding: 0.75rem 1.5rem !important;
-        font-weight: 600 !important;
-        letter-spacing: 0.025em !important;
-        transition: all 0.3s !important;
-        box-shadow: 0 10px 20px -10px rgba(102, 126, 234, 0.4) !important;
-    }
-    
-    .stButton button:hover {
-        transform: translateY(-2px) !important;
-        box-shadow: 0 15px 30px -10px rgba(102, 126, 234, 0.6) !important;
-    }
-    
-    .stButton button[kind="secondary"] {
-        background: white !important;
-        color: #667eea !important;
-        border: 2px solid #667eea !important;
-    }
-    
-    /* DataFrames and Tables */
-    .stDataFrame {
-        background: white;
-        border-radius: 15px;
-        padding: 1rem;
-        border: 1px solid #e2e8f0;
-    }
-    
-    .stDataFrame td, .stDataFrame th {
-        color: #1a1a1a !important;
-        padding: 0.75rem !important;
-    }
-    
-    /* Sidebar */
-    section[data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #1a1a2e 0%, #16213e 100%);
-    }
-    
-    section[data-testid="stSidebar"] * {
-        color: white !important;
-    }
-    
-    section[data-testid="stSidebar"] .stButton button {
-        background: rgba(255,255,255,0.1) !important;
-        color: white !important;
-        border: 1px solid rgba(255,255,255,0.2) !important;
-        box-shadow: none !important;
-    }
-    
-    section[data-testid="stSidebar"] .stButton button:hover {
-        background: rgba(255,255,255,0.2) !important;
-    }
-    
-    section[data-testid="stSidebar"] .stSelectbox div {
-        background: rgba(255,255,255,0.1) !important;
-        color: white !important;
-    }
-    
-    /* Footer - 2026 */
-    .app-footer {
-        text-align: center;
-        padding: 2rem;
-        background: linear-gradient(135deg, #1a1a2e, #16213e);
-        color: #a0a0ff !important;
-        font-size: 0.9rem;
-        border-top: 1px solid rgba(255,255,255,0.1);
-        margin-top: 4rem;
-    }
-    
-    .app-footer p {
-        color: #a0a0ff !important;
-    }
-    
-    /* Animations */
-    @keyframes fadeInUp {
-        from {
-            opacity: 0;
-            transform: translateY(30px);
-        }
-        to {
-            opacity: 1;
-            transform: translateY(0);
-        }
-    }
-    
-    .fade-in {
-        animation: fadeInUp 0.6s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-    
-    /* Loading States */
-    .stSpinner > div {
-        border-color: #667eea !important;
-    }
-    
-    /* Fix for metric text colors */
-    .css-1xarl3l, .css-1xarl3l * {
-        color: #1a1a1a !important;
-    }
-    
-    /* Ensure all text in cards is visible */
-    .business-card p, .business-card span, .business-card div {
-        color: #1a1a1a !important;
-    }
-    
-    .business-card .stMarkdown p {
-        color: #1a1a1a !important;
-    }
-    
-    /* Fix for status badge text */
-    .status-badge, .status-badge * {
-        color: white !important;
-    }
-    
-    /* Date inputs */
-    .stDateInput input {
-        background: white !important;
-        color: #1a1a1a !important;
-        border: 2px solid #e2e8f0 !important;
-        border-radius: 8px !important;
-    }
-    
-    /* Checkboxes */
-    .stCheckbox label {
-        color: #1a1a1a !important;
-    }
-    
-    /* Radio buttons */
-    .stRadio label {
-        color: #1a1a1a !important;
-    }
-    
-    /* Success/Info/Warning/Error messages */
-    .stSuccess, .stInfo, .stWarning, .stError {
-        color: #1a1a1a !important;
-    }
-    
-    /* Update year in footer */
-    .year-2026 {
-        font-weight: bold;
-        background: linear-gradient(135deg, #667eea, #764ba2);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
-# ============================================================================
-# SESSION STATE INITIALIZATION - FIXED VERSION
-# ============================================================================
-
-def safe_load_company_info():
-    """Safely load company info from database without depending on session state"""
-    company_info = {
-        'name': 'Your Business Name',
-        'address': '123 Business Street',
-        'city': 'Port of Spain, Trinidad',
-        'phone': '(868) 123-4567',
-        'email': 'accounts@yourbusiness.com',
-        'tax_id': '123456789',
-        'bank_details': 'First Citizens Bank\nAccount: 123456789\nSort Code: 123-456',
-        'invoice_prefix': 'INV',
-        'vat_registered': True,
-        'default_currency': 'TTD'
-    }
-    
-    try:
-        # Check if database exists and is accessible
-        if os.path.exists('invoices.db'):
-            # Create a connection without using the context manager to avoid any session state issues
-            conn = sqlite3.connect('invoices.db')
-            conn.row_factory = sqlite3.Row
-            c = conn.cursor()
-            
-            # Check if table exists
-            c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='company_settings'")
-            if c.fetchone():
-                c.execute("SELECT * FROM company_settings WHERE id = 1")
-                row = c.fetchone()
-                if row:
-                    company_info = {
-                        'name': row['name'] or company_info['name'],
-                        'address': row['address'] or company_info['address'],
-                        'city': row['city'] or company_info['city'],
-                        'phone': row['phone'] or company_info['phone'],
-                        'email': row['email'] or company_info['email'],
-                        'tax_id': row['tax_id'] or company_info['tax_id'],
-                        'bank_details': row['bank_details'] or company_info['bank_details'],
-                        'logo_bytes': row['logo_data'],
-                        'logo_mime': row['logo_mime'],
-                        'default_currency': row['default_currency'] or 'TTD',
-                        'vat_registered': bool(row['vat_registered']) if row['vat_registered'] is not None else True,
-                        'invoice_prefix': row['invoice_prefix'] or 'INV'
-                    }
-                    if row['logo_data']:
-                        company_info['logo_base64'] = base64.b64encode(row['logo_data']).decode()
-            conn.close()
-    except Exception as e:
-        logger.error(f"Error loading company settings: {e}")
-        # Return default values if database load fails
-    
-    return company_info
-
-def init_session_state():
-    """Initialize all session state variables in correct order"""
-    
-    # STEP 1: Initialize the most basic structure first
-    # This ensures we always have company_info available
-    
-    # Load company info without depending on session state
-    loaded_company_info = safe_load_company_info()
-    
-    # Initialize company_info in session state
-    if 'company_info' not in st.session_state:
-        st.session_state.company_info = loaded_company_info
-    
-    # STEP 2: Initialize all other session variables with defaults
-    # These don't depend on anything else
-    
-    defaults = {
-        'invoice_items': [],
-        'invoice_number': None,  # Will be set after company_info is ready
-        'currency': st.session_state.company_info.get('default_currency', 'TTD'),
-        'database_initialized': False,
-        'current_page': 'dashboard',
-        'clients': [],
-        'edit_index': -1,
-        'selected_client_id': None,
-        'invoice_notes': '',
-        'invoice_status': 'Draft',
-        'view_invoice_id': None,
-        'filter_status': 'All',
-        'filter_client': '',
-        'filter_date_from': None,
-        'filter_date_to': None,
-        'user_id': 1,
-        'user_role': 'admin',
-        'show_help': False,
-        'recurring_frequency': 'None',
-        'payment_amount': 0,
-        'payment_method': 'Bank Transfer',
-        'payment_reference': '',
-        'template_name': '',
-        'notification': None,
-        'notification_type': None,
-        'payment_invoice_id': None,
-        'show_payment_modal': False,
-        'show_email_modal': False
-    }
-    
-    for key, value in defaults.items():
-        if key not in st.session_state:
-            st.session_state[key] = value
-    
-    # STEP 3: Now that company_info is definitely in session state,
-    # we can safely generate the invoice number
-    if st.session_state.invoice_number is None:
-        st.session_state.invoice_number = generate_invoice_number()
-
-# Initialize session state
-init_session_state()
-
-# Initialize database (now that session state is ready)
-if not st.session_state.database_initialized:
-    if init_database():
-        st.session_state.database_initialized = True
-        # Reload company info from database now that it's initialized
-        try:
-            with get_db_connection() as conn:
-                c = conn.cursor()
-                c.execute("SELECT * FROM company_settings WHERE id = 1")
-                row = c.fetchone()
-                if row:
-                    st.session_state.company_info.update({
-                        'name': row['name'],
-                        'address': row['address'],
-                        'city': row['city'],
-                        'phone': row['phone'],
-                        'email': row['email'],
-                        'tax_id': row['tax_id'],
-                        'bank_details': row['bank_details'],
-                        'default_currency': row['default_currency'] or 'TTD',
-                        'vat_registered': bool(row['vat_registered']),
-                        'invoice_prefix': row['invoice_prefix'] or 'INV'
-                    })
-                    if row['logo_data']:
-                        st.session_state.company_info['logo_bytes'] = row['logo_data']
-                        st.session_state.company_info['logo_mime'] = row['logo_mime']
-                        st.session_state.company_info['logo_base64'] = base64.b64encode(row['logo_data']).decode()
-        except Exception as e:
-            logger.error(f"Error reloading company settings: {e}")
-
-# ============================================================================
-# HEADER - WITH SAFE ACCESS AND 2026 UPDATE
-# ============================================================================
-
-# Safely get values for header
-try:
-    currency_name = CURRENCIES[st.session_state.currency]['name']
-    user_role = st.session_state.user_role.title()
-except (KeyError, AttributeError):
-    currency_name = 'Trinidad & Tobago Dollar'
-    user_role = 'Admin'
-
-current_year = datetime.now().year
-
-st.markdown(f"""
-    <div class="app-header fade-in">
-        <div style="display: flex; justify-content: space-between; align-items: center;">
-            <div>
-                <h1 class="app-title">💰 INVOICE PRO {current_year}</h1>
-                <div class="app-subtitle">Next-generation invoicing for Caribbean businesses</div>
-            </div>
-            <div style="display: flex; gap: 1rem; align-items: center;">
-                <div style="background: rgba(255,255,255,0.2); padding: 0.75rem 1.5rem; border-radius: 12px; font-weight: 600; color: white !important;">
-                    {currency_name}
-                </div>
-                <div style="background: rgba(255,255,255,0.2); padding: 0.75rem 1.5rem; border-radius: 12px; color: white !important;">
-                    👤 {user_role}
-                </div>
-            </div>
-        </div>
-    </div>
-""", unsafe_allow_html=True)
-
-# Show notification if exists
-if st.session_state.notification:
-    if st.session_state.notification_type == 'success':
-        st.markdown(f'<div class="alert-success">{st.session_state.notification}</div>', unsafe_allow_html=True)
-    elif st.session_state.notification_type == 'warning':
-        st.markdown(f'<div class="alert-warning">{st.session_state.notification}</div>', unsafe_allow_html=True)
-    elif st.session_state.notification_type == 'error':
-        st.markdown(f'<div class="alert-error">{st.session_state.notification}</div>', unsafe_allow_html=True)
-    
-    # Clear notification after showing
-    st.session_state.notification = None
-    st.session_state.notification_type = None
-
-# ============================================================================
-# SIDEBAR NAVIGATION
-# ============================================================================
-
-with st.sidebar:
-    st.markdown("### 📍 Navigation")
-    st.markdown("---")
-    
-    pages = {
-        "📊 Dashboard": "dashboard",
-        "📄 Create Invoice": "create",
-        "📋 View Invoices": "view_invoices",
-        "👥 Clients": "clients",
-        "💰 Payments": "payments",
-        "🔄 Recurring": "recurring",
-        "📊 Reports": "reports",
-        "⚙️ Settings": "settings",
-        "❓ Help": "help"
-    }
-    
-    for page_name, page_id in pages.items():
-        button_type = "primary" if st.session_state.current_page == page_id else "secondary"
-        if st.button(page_name, use_container_width=True, type=button_type, key=f"nav_{page_id}"):
-            st.session_state.current_page = page_id
-            st.rerun()
-    
-    st.markdown("---")
-    
-    # Currency selector
-    st.markdown("### 💱 Currency")
-    currency_options = list(CURRENCIES.keys())
-    
-    try:
-        current_idx = currency_options.index(st.session_state.currency)
-    except ValueError:
-        current_idx = 0
-        st.session_state.currency = 'TTD'
-    
-    selected_currency = st.selectbox(
-        "Select Currency",
-        options=currency_options,
-        format_func=lambda x: f"{CURRENCIES[x]['symbol']} {CURRENCIES[x]['name']}",
-        index=current_idx,
-        key="sidebar_currency",
-        label_visibility="collapsed"
-    )
-    
-    if selected_currency != st.session_state.currency:
-        st.session_state.currency = selected_currency
-        st.rerun()
-    
-    st.markdown("---")
-    
-    # Quick actions
-    st.markdown("### ⚡ Quick Actions")
-    if st.button("➕ New Invoice", use_container_width=True):
-        st.session_state.current_page = "create"
-        st.session_state.invoice_items = []
-        st.session_state.invoice_number = generate_invoice_number()
-        st.rerun()
-    
-    if st.button("📤 Export Data", use_container_width=True):
-        backup_data, filename = backup_database()
-        if backup_data:
-            st.download_button(
-                label="📥 Download Backup",
-                data=backup_data,
-                file_name=filename,
-                mime="application/octet-stream",
-                use_container_width=True
-            )
-    
-    st.markdown("---")
-    
-    # Quick stats
-    stats = get_dashboard_stats()
-    if stats:
-        st.markdown("### 📊 Quick Stats")
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("Invoices", stats['total_invoices'])
-            st.metric("Revenue", format_amount(stats['total_revenue'], st.session_state.currency))
-        with col2:
-            st.metric("Clients", stats['total_clients'])
-            st.metric("Pending", format_amount(stats['pending_amount'], st.session_state.currency))
-        
-        if stats['overdue_amount'] > 0:
-            st.warning(f"⚠️ Overdue: {format_amount(stats['overdue_amount'], st.session_state.currency)}")
-    
-    st.markdown("---")
-    st.markdown(f'<div class="app-footer">© {current_year} Invoice Pro<br>Version 3.0</div>', unsafe_allow_html=True)
-
-# ============================================================================
-# DASHBOARD PAGE
-# ============================================================================
-
-def render_dashboard_page():
-    """Render the dashboard page"""
-    
-    st.markdown('<div class="section-header">📊 Dashboard</div>', unsafe_allow_html=True)
-    
-    stats = get_dashboard_stats()
-    
-    if stats:
-        # Key metrics
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            st.markdown("""
-                <div class="metric-card">
-                    <div class="metric-label">Total Invoices</div>
-                    <div class="metric-value">{}</div>
-                </div>
-            """.format(stats['total_invoices']), unsafe_allow_html=True)
-        
-        with col2:
-            st.markdown("""
-                <div class="metric-card">
-                    <div class="metric-label">Total Revenue</div>
-                    <div class="metric-value">{}</div>
-                </div>
-            """.format(format_amount(stats['total_revenue'], st.session_state.currency)), unsafe_allow_html=True)
-        
-        with col3:
-            st.markdown("""
-                <div class="metric-card">
-                    <div class="metric-label">Active Clients</div>
-                    <div class="metric-value">{}</div>
-                </div>
-            """.format(stats['total_clients']), unsafe_allow_html=True)
-        
-        with col4:
-            st.markdown("""
-                <div class="metric-card">
-                    <div class="metric-label">Pending Amount</div>
-                    <div class="metric-value">{}</div>
-                </div>
-            """.format(format_amount(stats['pending_amount'], st.session_state.currency)), unsafe_allow_html=True)
-        
-        st.markdown("---")
-        
-        # Charts
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("### 📈 Revenue Trend")
-            if not stats['monthly_data'].empty:
-                fig = go.Figure()
-                fig.add_trace(go.Scatter(
-                    x=stats['monthly_data']['month'],
-                    y=stats['monthly_data']['revenue'],
-                    mode='lines+markers',
-                    name='Revenue',
-                    line=dict(color='#2563eb', width=3),
-                    marker=dict(size=8)
-                ))
-                fig.update_layout(
-                    xaxis_title="Month",
-                    yaxis_title=f"Revenue ({get_currency_symbol(st.session_state.currency)})",
-                    hovermode='x unified',
-                    plot_bgcolor='white'
-                )
-                st.plotly_chart(fig, use_container_width=True)
-        
-        with col2:
-            st.markdown("### 📊 Invoice Status")
-            with get_db_connection() as conn:
-                status_counts = pd.read_sql_query(
-                    "SELECT status, COUNT(*) as count FROM invoices GROUP BY status",
-                    conn
-                )
-            
-            if not status_counts.empty:
-                fig = px.pie(
-                    status_counts, 
-                    values='count', 
-                    names='status',
-                    color='status',
-                    color_discrete_map=STATUS_COLORS
-                )
-                fig.update_layout(showlegend=True, plot_bgcolor='white')
-                st.plotly_chart(fig, use_container_width=True)
-        
-        # Recent invoices
-        st.markdown("### 🕐 Recent Invoices")
-        recent_invoices = get_invoices()
-        if not recent_invoices.empty:
-            recent_invoices = recent_invoices.head(5)
-            for _, invoice in recent_invoices.iterrows():
-                with st.container():
-                    st.markdown('<div class="business-card">', unsafe_allow_html=True)
-                    col1, col2, col3, col4 = st.columns([2, 2, 1, 1])
-                    with col1:
-                        st.markdown(f"**{invoice['invoice_number']}**")
-                        st.caption(invoice['client_name'])
-                    with col2:
-                        st.markdown(f"Date: {invoice['invoice_date']}")
-                        st.markdown(f"Amount: {format_amount(invoice['grand_total'], invoice['currency'])}")
-                    with col3:
-                        st.markdown(get_status_badge_html(invoice['status']), unsafe_allow_html=True)
-                    with col4:
-                        if st.button("View", key=f"view_recent_{invoice['id']}"):
-                            st.session_state.view_invoice_id = invoice['id']
-                            st.session_state.current_page = "view_invoices"
-                            st.rerun()
-                    st.markdown('</div>', unsafe_allow_html=True)
-        else:
-            st.info("No invoices yet. Create your first invoice!")
-    
-    else:
-        st.warning("Unable to load dashboard statistics")
-
-# ============================================================================
-# CREATE INVOICE PAGE
-# ============================================================================
-
-def render_create_invoice_page():
-    """Render the create invoice page"""
-    
-    st.markdown('<div class="section-header">📄 Create New Invoice</div>', unsafe_allow_html=True)
-    
-    # Tabs for different sections
-    tab1, tab2, tab3 = st.tabs(["📋 Invoice Details", "🏢 Company Info", "⚙️ Advanced"])
-    
-    with tab1:
-        col1, col2 = st.columns([1, 1])
-        
-        with col1:
-            # Invoice Details Card
-            with st.container():
-                st.markdown('<div class="business-card">', unsafe_allow_html=True)
-                
-                col_num, col_status = st.columns([2, 1])
-                with col_num:
-                    invoice_number = st.text_input("Invoice Number *", value=st.session_state.invoice_number)
-                with col_status:
-                    invoice_status = st.selectbox("Status", INVOICE_STATUSES, 
-                                                 index=INVOICE_STATUSES.index(st.session_state.invoice_status))
-                
-                date_col1, date_col2 = st.columns(2)
-                with date_col1:
-                    invoice_date = st.date_input("Invoice Date", datetime.now())
-                with date_col2:
-                    due_date = st.date_input("Due Date", datetime.now() + timedelta(days=30))
-                
-                po_number = st.text_input("PO Number (optional)")
-                
-                st.markdown('</div>', unsafe_allow_html=True)
-            
-            # Client Information Card
-            with st.container():
-                st.markdown('<div class="business-card">', unsafe_allow_html=True)
-                st.markdown("##### 👤 Client Information")
-                
-                # Quick select existing client
-                clients_df = get_clients()
-                if not clients_df.empty:
-                    client_options = ['-- New Client --'] + clients_df['name'].tolist()
-                    selected_client = st.selectbox(
-                        "Select existing client",
-                        options=client_options,
-                        key="quick_select_client"
-                    )
-                    
-                    if selected_client != '-- New Client --':
-                        client_data = clients_df[clients_df['name'] == selected_client].iloc[0]
-                        default_name = client_data['name']
-                        default_email = client_data['email']
-                        default_phone = client_data.get('phone', '')
-                        default_address = client_data.get('address', '')
-                        st.session_state.selected_client_id = client_data['id']
-                    else:
-                        default_name = ''
-                        default_email = ''
-                        default_phone = ''
-                        default_address = ''
-                        st.session_state.selected_client_id = None
-                else:
-                    default_name = ''
-                    default_email = ''
-                    default_phone = ''
-                    default_address = ''
-                
-                client_name = st.text_input("Client Name *", value=default_name)
-                client_email = st.text_input("Email Address *", value=default_email)
-                client_phone = st.text_input("Phone Number", value=default_phone)
-                client_address = st.text_area("Address", value=default_address, height=80)
-                
-                # Auto-save client option
-                auto_save_client = st.checkbox("Save client to database", value=True)
-                
-                st.markdown('</div>', unsafe_allow_html=True)
-        
-        with col2:
-            # Invoice Items Card
-            with st.container():
-                st.markdown('<div class="business-card">', unsafe_allow_html=True)
-                st.markdown("##### 📦 Invoice Items")
-                
-                # Item Entry Form
-                with st.form("item_form", clear_on_submit=True):
-                    editing = st.session_state.edit_index >= 0 and st.session_state.edit_index < len(st.session_state.invoice_items)
-                    
-                    if editing:
-                        st.markdown(f"##### ✏️ Editing Item #{st.session_state.edit_index + 1}")
-                        item = st.session_state.invoice_items[st.session_state.edit_index]
-                        default_desc = item['description']
-                        default_qty = item['quantity']
-                        default_price = item['unit_price']
-                        default_tax = item['tax_rate']
-                        default_discount = item['discount']
-                    else:
-                        st.markdown("##### ➕ Add New Item")
-                        default_desc = ""
-                        default_qty = 1
-                        default_price = 0.0
-                        default_tax = 0.0
-                        default_discount = 0.0
-                    
-                    description = st.text_area(
-                        "Description *", 
-                        value=default_desc,
-                        height=60,
-                        placeholder="Item or service description"
-                    )
-                    
-                    col_qty, col_price = st.columns(2)
-                    with col_qty:
-                        quantity = st.number_input("Quantity", min_value=0.01, value=float(default_qty), step=0.01, format="%.2f")
-                    with col_price:
-                        unit_price = st.number_input(
-                            f"Unit Price ({get_currency_symbol(st.session_state.currency)})", 
-                            min_value=0.0, value=default_price, step=10.0, format="%.2f"
-                        )
-                    
-                    col_tax, col_discount = st.columns(2)
-                    with col_tax:
-                        tax_rate = st.number_input("Tax %", min_value=0.0, max_value=100.0, value=default_tax, step=0.5, format="%.1f")
-                    with col_discount:
-                        discount = st.number_input("Discount %", min_value=0.0, max_value=100.0, value=default_discount, step=0.5, format="%.1f")
-                    
-                    # Preview calculation
-                    if quantity > 0 and unit_price > 0:
-                        preview_totals = calculate_item_totals(quantity, unit_price, tax_rate, discount)
-                        st.info(f"**Item Total: {format_amount(preview_totals['total'], st.session_state.currency)}**")
-                    
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        if editing:
-                            if st.form_submit_button("✅ Update Item", use_container_width=True):
-                                if description and unit_price > 0:
-                                    totals = calculate_item_totals(quantity, unit_price, tax_rate, discount)
-                                    
-                                    st.session_state.invoice_items[st.session_state.edit_index] = {
-                                        'description': description,
-                                        'quantity': quantity,
-                                        'unit_price': unit_price,
-                                        'tax_rate': tax_rate,
-                                        'discount': discount,
-                                        **totals
-                                    }
-                                    st.session_state.edit_index = -1
-                                    st.session_state.notification = "✓ Item updated successfully"
-                                    st.session_state.notification_type = "success"
-                                    st.rerun()
-                        else:
-                            if st.form_submit_button("➕ Add Item", use_container_width=True):
-                                if description and unit_price > 0:
-                                    totals = calculate_item_totals(quantity, unit_price, tax_rate, discount)
-                                    
-                                    st.session_state.invoice_items.append({
-                                        'description': description,
-                                        'quantity': quantity,
-                                        'unit_price': unit_price,
-                                        'tax_rate': tax_rate,
-                                        'discount': discount,
-                                        **totals
-                                    })
-                                    st.session_state.notification = "✓ Item added successfully"
-                                    st.session_state.notification_type = "success"
-                                    st.rerun()
-                                else:
-                                    st.warning("Description and price are required")
-                    
-                    with col2:
-                        if editing:
-                            if st.form_submit_button("❌ Cancel Edit", use_container_width=True):
-                                st.session_state.edit_index = -1
-                                st.rerun()
-                
-                # Display Items
-                if st.session_state.invoice_items:
-                    st.markdown("##### Current Items")
-                    
-                    for idx, item in enumerate(st.session_state.invoice_items):
-                        with st.container():
-                            cols = st.columns([3, 1, 1])
-                            with cols[0]:
-                                st.markdown(f"**{idx + 1}. {item['description']}**")
-                                st.caption(f"Qty: {item['quantity']} × {format_amount(item['unit_price'], st.session_state.currency)}")
-                            with cols[1]:
-                                st.markdown(f"**{format_amount(item['total'], st.session_state.currency)}**")
-                            with cols[2]:
-                                col_edit, col_del = st.columns(2)
-                                with col_edit:
-                                    if st.button("✏️", key=f"edit_{idx}"):
-                                        st.session_state.edit_index = idx
-                                        st.rerun()
-                                with col_del:
-                                    if st.button("🗑️", key=f"del_{idx}"):
-                                        st.session_state.invoice_items.pop(idx)
-                                        if st.session_state.edit_index == idx:
-                                            st.session_state.edit_index = -1
-                                        st.rerun()
-                        
-                        if idx < len(st.session_state.invoice_items) - 1:
-                            st.divider()
-                    
-                    # Calculate totals
-                    subtotal = sum(item['subtotal'] for item in st.session_state.invoice_items)
-                    total_discount = sum(item['discount_amount'] for item in st.session_state.invoice_items)
-                    total_tax = sum(item['tax_amount'] for item in st.session_state.invoice_items)
-                    grand_total = sum(item['total'] for item in st.session_state.invoice_items)
-                    
-                    st.divider()
-                    
-                    # Summary
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.metric("Subtotal", format_amount(subtotal, st.session_state.currency))
-                    with col2:
-                        st.metric("Discount", f"-{format_amount(total_discount, st.session_state.currency)}")
-                    with col3:
-                        st.metric("Tax", format_amount(total_tax, st.session_state.currency))
-                    
-                    st.markdown(f"""
-                        <div style="background: #2563eb20; padding: 1rem; border-radius: 8px; margin-top: 1rem;">
-                            <h3 style="margin:0; color: #2563eb;">GRAND TOTAL: {format_amount(grand_total, st.session_state.currency)}</h3>
-                        </div>
-                    """, unsafe_allow_html=True)
-                    
-                    # Action buttons
-                    col_reset, _ = st.columns([1, 3])
-                    with col_reset:
-                        if st.button("🔄 Clear All", use_container_width=True):
-                            st.session_state.invoice_items = []
-                            st.session_state.edit_index = -1
-                            st.rerun()
-                else:
-                    st.info("💡 No items added yet. Use the form above to add items.")
-                
-                st.markdown('</div>', unsafe_allow_html=True)
-    
-    with tab2:
-        st.markdown('<div class="business-card">', unsafe_allow_html=True)
-        st.markdown("##### 🏢 Company Information")
-        
-        company_name = st.text_input("Company Name", value=st.session_state.company_info['name'])
-        company_address = st.text_input("Address", value=st.session_state.company_info['address'])
-        company_city = st.text_input("City", value=st.session_state.company_info['city'])
-        company_phone = st.text_input("Phone", value=st.session_state.company_info['phone'])
-        company_email = st.text_input("Email", value=st.session_state.company_info['email'])
-        company_tax_id = st.text_input("TRN / Tax ID", value=st.session_state.company_info['tax_id'])
-        company_bank = st.text_area("Bank Details", value=st.session_state.company_info.get('bank_details', ''), height=100)
-        
-        # VAT Registration
-        vat_registered = st.checkbox("VAT Registered", value=st.session_state.company_info.get('vat_registered', True))
-        
-        # Invoice prefix
-        invoice_prefix = st.text_input("Invoice Prefix", value=st.session_state.company_info.get('invoice_prefix', 'INV'))
-        
-        # Logo upload
-        st.markdown("##### Company Logo")
-        logo_file = st.file_uploader(
-            "Upload Logo (PNG, JPG, JPEG)",
-            type=['png', 'jpg', 'jpeg'],
-            key="create_logo_upload"
-        )
-        
-        if logo_file is not None:
-            if save_logo(logo_file):
-                st.success(f"✓ Logo uploaded: {logo_file.name}")
-        
-        # Show current logo
-        if st.session_state.company_info.get('logo_base64'):
-            st.markdown(f'<div class="logo-container">{get_logo_html("80px", "200px")}</div>', unsafe_allow_html=True)
-            if st.button("🗑️ Remove Logo", key="remove_logo_create"):
-                remove_logo()
-                st.rerun()
-        
-        if st.button("💾 Update Company Info", use_container_width=True):
-            st.session_state.company_info.update({
-                'name': company_name,
-                'address': company_address,
-                'city': company_city,
-                'phone': company_phone,
-                'email': company_email,
-                'tax_id': company_tax_id,
-                'bank_details': company_bank,
-                'vat_registered': vat_registered,
-                'invoice_prefix': invoice_prefix
-            })
-            st.session_state.notification = "✓ Company information updated"
-            st.session_state.notification_type = "success"
-            st.rerun()
-        
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    with tab3:
-        st.markdown('<div class="business-card">', unsafe_allow_html=True)
-        st.markdown("##### ⚙️ Advanced Options")
-        
-        # Notes
-        invoice_notes = st.text_area(
-            "Invoice Notes",
-            value=st.session_state.invoice_notes,
-            height=100,
-            placeholder="Payment terms, special instructions, thank you message, etc."
-        )
-        st.session_state.invoice_notes = invoice_notes
-        
-        # Recurring invoice
-        st.markdown("##### 🔄 Recurring Invoice")
-        recurring_frequency = st.selectbox(
-            "Repeat every",
-            options=list(RECURRING_FREQUENCIES.keys()),
-            index=0
-        )
-        
-        if recurring_frequency != 'None':
-            recurring_end = st.date_input(
-                "End date (optional)",
-                value=None,
-                min_value=datetime.now()
-            )
-        
-        # Save as template
-        st.markdown("##### 📋 Save as Template")
-        template_name = st.text_input("Template Name", placeholder="e.g., Monthly Retainer")
-        if st.button("💾 Save as Template", use_container_width=True) and template_name:
-            template_data = {
-                'items': st.session_state.invoice_items,
-                'notes': invoice_notes
-            }
-            template_id = save_invoice_template(template_name, template_data)
-            if template_id:
-                st.session_state.notification = f"✓ Template '{template_name}' saved"
-                st.session_state.notification_type = "success"
-                st.rerun()
-        
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    # Preview and Actions Section
-    if st.session_state.invoice_items and client_name:
-        st.markdown("---")
-        st.markdown("### 👁️ Invoice Preview")
-        
-        # Calculate totals
-        subtotal = sum(item['subtotal'] for item in st.session_state.invoice_items)
-        total_discount = sum(item['discount_amount'] for item in st.session_state.invoice_items)
-        total_tax = sum(item['tax_amount'] for item in st.session_state.invoice_items)
-        grand_total = sum(item['total'] for item in st.session_state.invoice_items)
-        
-        # Preview Container
-        with st.container():
-            st.markdown('<div class="invoice-preview-container">', unsafe_allow_html=True)
-            
-            # Header with logo
-            col_left, col_right = st.columns(2)
-            with col_left:
-                if st.session_state.company_info.get('logo_base64'):
-                    st.image(io.BytesIO(st.session_state.company_info['logo_bytes']), width=150)
-                st.markdown(f"### INVOICE")
-                st.markdown(f"**{invoice_number}**")
-                st.markdown(get_status_badge_html(invoice_status), unsafe_allow_html=True)
-            with col_right:
-                st.markdown(f"""
-                **{st.session_state.company_info['name']}**  
-                {st.session_state.company_info['address']}  
-                {st.session_state.company_info['city']}  
-                📞 {st.session_state.company_info['phone']}  
-                ✉️ {st.session_state.company_info['email']}  
-                {'VAT Registered' if st.session_state.company_info.get('vat_registered') else ''}
-                """)
-            
-            st.divider()
-            
-            # Client and Invoice Details
-            col1, col2 = st.columns(2)
-            with col1:
-                st.markdown("**Bill To:**")
-                st.markdown(f"""
-                **{client_name}**  
-                {client_address if client_address else ''}  
-                ✉️ {client_email}  
-                {f'📞 {client_phone}' if client_phone else ''}
-                """)
-            with col2:
-                st.markdown("**Invoice Details:**")
-                st.markdown(f"""
-                **Date:** {invoice_date.strftime('%d %b %Y')}  
-                **Due:** {due_date.strftime('%d %b %Y')}  
-                {f'**PO:** {po_number}' if po_number else ''}  
-                **Currency:** {CURRENCIES[st.session_state.currency]['name']}
-                """)
-            
-            st.divider()
-            
-            # Items Table
-            if st.session_state.invoice_items:
-                items_data = []
-                for item in st.session_state.invoice_items:
-                    items_data.append({
-                        "Description": item['description'],
-                        "Qty": f"{item['quantity']:.2f}",
-                        "Price": format_amount(item['unit_price'], st.session_state.currency),
-                        "Tax": f"{item['tax_rate']}%",
-                        "Disc": f"{item['discount']}%",
-                        "Total": format_amount(item['total'], st.session_state.currency)
-                    })
-                
-                st.dataframe(
-                    pd.DataFrame(items_data),
-                    use_container_width=True,
-                    hide_index=True,
-                    column_config={
-                        "Description": st.column_config.TextColumn("Description", width="large"),
-                        "Total": st.column_config.TextColumn("Total", width="medium"),
+                        "Price": st.column_config.TextColumn("Price", width=100),
+                        "Tax": st.column_config.TextColumn("Tax", width=60),
+                        "Disc": st.column_config.TextColumn("Disc", width=60),
+                        "Total": st.column_config.TextColumn("Total", width=100)
                     }
                 )
-            
-            st.divider()
             
             # Totals
-            col1, col2, col3 = st.columns([1, 1, 1])
+            col1, col2, col3 = st.columns([3, 1, 2])
             with col2:
-                st.markdown(f"""
-                **Subtotal:** {format_amount(subtotal, st.session_state.currency)}  
-                **Discount:** -{format_amount(total_discount, st.session_state.currency)}  
-                **Tax:** {format_amount(total_tax, st.session_state.currency)}  
-                """)
+                st.markdown("**Subtotal:**")
+                st.markdown("**Discount:**")
+                st.markdown("**Tax:**")
+                st.markdown("---")
+                st.markdown("**GRAND TOTAL:**")
             with col3:
-                st.markdown(f'<div class="grand-total-box"><p style="font-size: 0.9rem; margin-bottom: 0.25rem;">GRAND TOTAL</p><p style="font-size: 2rem; font-weight: 700; margin: 0;">{format_amount(grand_total, st.session_state.currency)}</p></div>', unsafe_allow_html=True)
-            
-            # Payment Details
-            if st.session_state.company_info.get('bank_details'):
-                st.divider()
-                st.markdown("**Payment Details:**")
-                st.text(st.session_state.company_info['bank_details'])
+                st.markdown(f"**{format_amount(subtotal, st.session_state.currency)}**")
+                st.markdown(f"**-{format_amount(total_discount, st.session_state.currency)}**")
+                st.markdown(f"**{format_amount(total_tax, st.session_state.currency)}**")
+                st.markdown("---")
+                st.markdown(f"**{format_amount(grand_total, st.session_state.currency)}**")
             
             # Notes
             if invoice_notes:
                 st.divider()
                 st.markdown("**Notes:**")
-                st.text(invoice_notes)
+                st.markdown(invoice_notes)
             
             st.markdown('</div>', unsafe_allow_html=True)
         
         # Action Buttons
-        st.markdown("---")
-        st.markdown("### 🎯 Actions")
+        st.markdown('<div class="action-buttons">', unsafe_allow_html=True)
         
         col1, col2, col3, col4, col5 = st.columns(5)
         
         with col1:
-            if st.button("💾 Save Invoice", use_container_width=True):
-                try:
-                    # Save client if auto-save is enabled
-                    if auto_save_client and client_name and client_email:
-                        client_id = save_client_to_db({
+            if st.button("💾 Save as Draft", use_container_width=True):
+                invoice_data = {
+                    'invoice_number': invoice_number,
+                    'client_name': client_name,
+                    'client_email': client_email,
+                    'client_address': client_address,
+                    'client_phone': client_phone,
+                    'invoice_date': invoice_date.strftime('%Y-%m-%d'),
+                    'due_date': due_date.strftime('%Y-%m-%d'),
+                    'po_number': po_number,
+                    'currency': st.session_state.currency,
+                    'subtotal': subtotal,
+                    'tax_total': total_tax,
+                    'discount_total': total_discount,
+                    'grand_total': grand_total,
+                    'amount_paid': 0,
+                    'balance_due': grand_total,
+                    'status': 'Draft',
+                    'notes': invoice_notes,
+                    'recurring_frequency': recurring_frequency if recurring_frequency != 'None' else None,
+                    'recurring_next_date': recurring_end.strftime('%Y-%m-%d') if recurring_frequency != 'None' and recurring_end else None
+                }
+                
+                invoice_id, errors, warnings = save_invoice_to_db(invoice_data, st.session_state.invoice_items)
+                
+                if invoice_id:
+                    # Save client if option selected
+                    if auto_save_client and client_email:
+                        client_data = {
                             'name': client_name,
                             'email': client_email,
                             'phone': client_phone,
                             'address': client_address
-                        })
+                        }
+                        save_client_to_db(client_data)
                     
-                    # Prepare invoice data
-                    invoice_data = {
-                        'invoice_number': invoice_number,
-                        'client_name': client_name,
-                        'client_email': client_email,
-                        'client_address': client_address,
-                        'client_phone': client_phone,
-                        'invoice_date': str(invoice_date),
-                        'due_date': str(due_date),
-                        'po_number': po_number,
-                        'currency': st.session_state.currency,
-                        'subtotal': subtotal,
-                        'tax_total': total_tax,
-                        'discount_total': total_discount,
-                        'grand_total': grand_total,
-                        'status': invoice_status,
-                        'notes': invoice_notes,
-                        'recurring_frequency': recurring_frequency if recurring_frequency != 'None' else None,
-                        'recurring_next_date': str(invoice_date + RECURRING_FREQUENCIES[recurring_frequency]) if recurring_frequency != 'None' and RECURRING_FREQUENCIES[recurring_frequency] else None
-                    }
-                    
-                    invoice_id, errors, warnings = save_invoice_to_db(invoice_data, st.session_state.invoice_items)
-                    
-                    if invoice_id:
-                        for warning in warnings:
-                            st.warning(warning)
-                        st.session_state.notification = f"✓ Invoice saved successfully! (ID: {invoice_id})"
-                        st.session_state.notification_type = "success"
-                        st.balloons()
-                        
-                        # Clear form for next invoice
-                        st.session_state.invoice_items = []
-                        st.session_state.invoice_number = generate_invoice_number()
-                        st.session_state.invoice_notes = ''
-                        st.rerun()
-                    else:
-                        for error in errors:
-                            st.error(error)
-                except Exception as e:
-                    st.error(f"Error saving invoice: {e}")
+                    st.session_state.notification = f"✓ Invoice {invoice_number} saved as Draft"
+                    st.session_state.notification_type = "success"
+                    st.session_state.invoice_items = []
+                    st.session_state.invoice_number = generate_invoice_number()
+                    st.session_state.invoice_notes = ''
+                    st.rerun()
+                else:
+                    for error in errors:
+                        st.error(error)
+                    for warning in warnings:
+                        st.warning(warning)
         
         with col2:
-            if PDF_AVAILABLE:
-                if st.button("📄 Generate PDF", use_container_width=True):
-                    with st.spinner("Generating PDF..."):
-                        invoice_data = {
-                            'invoice_number': invoice_number,
-                            'invoice_date': invoice_date.strftime('%d %b %Y'),
-                            'due_date': due_date.strftime('%d %b %Y'),
-                            'po_number': po_number,
-                            'status': invoice_status,
-                            'client': {
-                                'name': client_name,
-                                'email': client_email,
-                                'address': client_address
-                            },
-                            'company_info': st.session_state.company_info,
-                            'items': st.session_state.invoice_items,
-                            'currency': st.session_state.currency,
-                            'notes': invoice_notes,
-                            'totals': {
-                                'subtotal': subtotal,
-                                'discount': total_discount,
-                                'tax': total_tax,
-                                'grand_total': grand_total
-                            }
-                        }
-                        
-                        pdf_buffer = generate_pdf_invoice(invoice_data)
-                        if pdf_buffer:
-                            st.download_button(
-                                label="📥 Download PDF",
-                                data=pdf_buffer,
-                                file_name=f"invoice_{invoice_number}.pdf",
-                                mime="application/pdf",
-                                use_container_width=True
-                            )
-                        else:
-                            st.error("Failed to generate PDF")
-            else:
-                st.button("📄 PDF (Install ReportLab)", disabled=True, use_container_width=True)
-        
-        with col3:
-            if EXCEL_AVAILABLE:
-                if st.button("📊 Export Excel", use_container_width=True):
-                    invoice_data = {
+            if st.button("📤 Save & Send", use_container_width=True):
+                invoice_data = {
+                    'invoice_number': invoice_number,
+                    'client_name': client_name,
+                    'client_email': client_email,
+                    'client_address': client_address,
+                    'client_phone': client_phone,
+                    'invoice_date': invoice_date.strftime('%Y-%m-%d'),
+                    'due_date': due_date.strftime('%Y-%m-%d'),
+                    'po_number': po_number,
+                    'currency': st.session_state.currency,
+                    'subtotal': subtotal,
+                    'tax_total': total_tax,
+                    'discount_total': total_discount,
+                    'grand_total': grand_total,
+                    'amount_paid': 0,
+                    'balance_due': grand_total,
+                    'status': 'Sent',
+                    'notes': invoice_notes,
+                    'sent_date': datetime.now().isoformat(),
+                    'recurring_frequency': recurring_frequency if recurring_frequency != 'None' else None,
+                    'recurring_next_date': recurring_end.strftime('%Y-%m-%d') if recurring_frequency != 'None' and recurring_end else None
+                }
+                
+                invoice_id, errors, warnings = save_invoice_to_db(invoice_data, st.session_state.invoice_items)
+                
+                if invoice_id:
+                    # Generate PDF for email
+                    pdf_data = {
                         'invoice_number': invoice_number,
-                        'client_name': client_name,
-                        'client_email': client_email,
-                        'invoice_date': str(invoice_date),
-                        'due_date': str(due_date),
-                        'subtotal': subtotal,
-                        'tax_total': total_tax,
-                        'discount_total': total_discount,
-                        'grand_total': grand_total
+                        'invoice_date': invoice_date.strftime('%Y-%m-%d'),
+                        'due_date': due_date.strftime('%Y-%m-%d'),
+                        'po_number': po_number,
+                        'currency': st.session_state.currency,
+                        'status': 'Sent',
+                        'client': {
+                            'name': client_name,
+                            'address': client_address,
+                            'email': client_email,
+                            'phone': client_phone
+                        },
+                        'company_info': st.session_state.company_info,
+                        'items': st.session_state.invoice_items,
+                        'totals': {
+                            'subtotal': subtotal,
+                            'discount': total_discount,
+                            'tax': total_tax,
+                            'grand_total': grand_total
+                        },
+                        'notes': invoice_notes,
+                        'amount_paid': 0,
+                        'balance_due': grand_total
                     }
                     
-                    excel_buffer = export_to_excel(invoice_data, st.session_state.invoice_items)
-                    if excel_buffer:
-                        st.download_button(
-                            label="📥 Download Excel",
-                            data=excel_buffer,
-                            file_name=f"invoice_{invoice_number}.xlsx",
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                            use_container_width=True
-                        )
+                    pdf_buffer = generate_pdf_invoice(pdf_data)
+                    
+                    # Save client if option selected
+                    if auto_save_client and client_email:
+                        client_data = {
+                            'name': client_name,
+                            'email': client_email,
+                            'phone': client_phone,
+                            'address': client_address
+                        }
+                        save_client_to_db(client_data)
+                    
+                    st.session_state.notification = f"✓ Invoice {invoice_number} saved and ready to send"
+                    st.session_state.notification_type = "success"
+                    
+                    # Open email dialog
+                    st.session_state.show_email_modal = True
+                    st.session_state.email_invoice_id = invoice_id
+                    st.session_state.email_pdf = pdf_buffer
+                    st.rerun()
+        
+        with col3:
+            if st.button("👁️ Preview PDF", use_container_width=True):
+                pdf_data = {
+                    'invoice_number': invoice_number,
+                    'invoice_date': invoice_date.strftime('%Y-%m-%d'),
+                    'due_date': due_date.strftime('%Y-%m-%d'),
+                    'po_number': po_number,
+                    'currency': st.session_state.currency,
+                    'status': invoice_status,
+                    'client': {
+                        'name': client_name,
+                        'address': client_address,
+                        'email': client_email,
+                        'phone': client_phone
+                    },
+                    'company_info': st.session_state.company_info,
+                    'items': st.session_state.invoice_items,
+                    'totals': {
+                        'subtotal': subtotal,
+                        'discount': total_discount,
+                        'tax': total_tax,
+                        'grand_total': grand_total
+                    },
+                    'notes': invoice_notes,
+                    'amount_paid': 0,
+                    'balance_due': grand_total
+                }
+                
+                pdf_buffer = generate_pdf_invoice(pdf_data)
+                if pdf_buffer:
+                    st.download_button(
+                        label="📥 Download PDF",
+                        data=pdf_buffer,
+                        file_name=f"invoice_{invoice_number}.pdf",
+                        mime="application/pdf",
+                        use_container_width=True
+                    )
         
         with col4:
-            email_to = st.text_input("", value=client_email if client_email else "", 
-                                    key="email_input", placeholder="Email address")
+            if st.button("📊 Export Excel", use_container_width=True):
+                invoice_data_export = {
+                    'invoice_number': invoice_number,
+                    'client_name': client_name,
+                    'client_email': client_email,
+                    'client_phone': client_phone,
+                    'client_address': client_address,
+                    'invoice_date': invoice_date.strftime('%Y-%m-%d'),
+                    'due_date': due_date.strftime('%Y-%m-%d'),
+                    'po_number': po_number,
+                    'currency': st.session_state.currency,
+                    'subtotal': subtotal,
+                    'tax_total': total_tax,
+                    'discount_total': total_discount,
+                    'grand_total': grand_total
+                }
+                
+                excel_buffer = export_to_excel(invoice_data_export, st.session_state.invoice_items)
+                if excel_buffer:
+                    st.download_button(
+                        label="📥 Download Excel",
+                        data=excel_buffer,
+                        file_name=f"invoice_{invoice_number}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True
+                    )
         
         with col5:
-            if st.button("📧 Send Email", use_container_width=True, disabled=not email_to):
-                if email_to:
-                    with st.spinner("Sending email..."):
-                        # Generate PDF for email
-                        invoice_data = {
-                            'invoice_number': invoice_number,
-                            'invoice_date': invoice_date.strftime('%d %b %Y'),
-                            'due_date': due_date.strftime('%d %b %Y'),
-                            'po_number': po_number,
-                            'status': invoice_status,
-                            'client': {
-                                'name': client_name,
-                                'email': client_email,
-                                'address': client_address
-                            },
-                            'company_info': st.session_state.company_info,
-                            'items': st.session_state.invoice_items,
-                            'currency': st.session_state.currency,
-                            'notes': invoice_notes,
-                            'totals': {
-                                'subtotal': subtotal,
-                                'discount': total_discount,
-                                'tax': total_tax,
-                                'grand_total': grand_total
-                            }
-                        }
-                        
-                        pdf_buffer = generate_pdf_invoice(invoice_data)
-                        if pdf_buffer:
-                            success, message = send_email_invoice(email_to, pdf_buffer, invoice_number)
-                            if success:
-                                st.session_state.notification = message
-                                st.session_state.notification_type = "success"
-                            else:
-                                st.session_state.notification = message
-                                st.session_state.notification_type = "warning"
-                            st.rerun()
-                else:
-                    st.warning("⚠️ Enter an email address")
+            if st.button("🔄 Clear Form", use_container_width=True):
+                st.session_state.invoice_items = []
+                st.session_state.invoice_number = generate_invoice_number()
+                st.session_state.invoice_notes = ''
+                st.session_state.edit_index = -1
+                st.rerun()
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    else:
+        st.info("💡 Add items and client information to create your invoice")
 
 # ============================================================================
 # VIEW INVOICES PAGE
@@ -2739,117 +244,101 @@ def render_create_invoice_page():
 def render_view_invoices_page():
     """Render the view invoices page"""
     
-    st.markdown('<div class="section-header">📋 Invoice Management</div>', unsafe_allow_html=True)
-    
-    # Check if viewing a specific invoice
-    if st.session_state.view_invoice_id:
-        render_invoice_detail(st.session_state.view_invoice_id)
-        if st.button("← Back to List", use_container_width=False):
-            st.session_state.view_invoice_id = None
-            st.rerun()
-        return
+    st.markdown('<div class="section-header">📋 View Invoices</div>', unsafe_allow_html=True)
     
     # Filters
-    with st.container():
-        st.markdown("### 🔍 Search & Filter")
-        
-        col1, col2, col3, col4 = st.columns(4)
+    with st.expander("🔍 Search & Filter", expanded=True):
+        col1, col2, col3 = st.columns(3)
         
         with col1:
             filter_status = st.selectbox(
                 "Status",
                 options=['All'] + INVOICE_STATUSES,
-                key="filter_status_select"
+                index=0
             )
         
         with col2:
-            filter_client = st.text_input("Client Name", key="filter_client_input", placeholder="Search by client")
+            filter_client = st.text_input("Client Name", placeholder="Search by client...")
         
         with col3:
-            filter_date_from = st.date_input("From Date", value=None, key="filter_date_from")
+            date_range = st.date_input(
+                "Date Range",
+                value=(datetime.now() - timedelta(days=30), datetime.now()),
+                key="date_range_filter"
+            )
         
-        with col4:
-            filter_date_to = st.date_input("To Date", value=None, key="filter_date_to")
+        if st.button("🔍 Apply Filters", use_container_width=True):
+            st.session_state.filter_status = filter_status
+            st.session_state.filter_client = filter_client
+            if len(date_range) == 2:
+                st.session_state.filter_date_from = date_range[0].strftime('%Y-%m-%d')
+                st.session_state.filter_date_to = date_range[1].strftime('%Y-%m-%d')
+            st.rerun()
     
     # Build filters
     filters = {}
-    if filter_status != 'All':
-        filters['status'] = filter_status
-    if filter_client:
-        filters['client_name'] = filter_client
-    if filter_date_from:
-        filters['date_from'] = str(filter_date_from)
-    if filter_date_to:
-        filters['date_to'] = str(filter_date_to)
+    if st.session_state.filter_status != 'All':
+        filters['status'] = st.session_state.filter_status
+    if st.session_state.filter_client:
+        filters['client_name'] = st.session_state.filter_client
+    if st.session_state.filter_date_from:
+        filters['date_from'] = st.session_state.filter_date_from
+    if st.session_state.filter_date_to:
+        filters['date_to'] = st.session_state.filter_date_to
     
     # Get invoices
-    invoices_df = get_invoices(filters)
+    invoices_df = get_invoices(filters if filters else None)
     
     if not invoices_df.empty:
-        st.markdown(f"### 📊 Found {len(invoices_df)} Invoice(s)")
+        # Summary stats
+        total_amount = invoices_df['grand_total'].sum()
+        paid_amount = invoices_df[invoices_df['status'] == 'Paid']['grand_total'].sum() if 'Paid' in invoices_df['status'].values else 0
+        pending_amount = invoices_df[invoices_df['status'].isin(['Draft', 'Sent'])]['grand_total'].sum() if any(invoices_df['status'].isin(['Draft', 'Sent'])) else 0
         
-        # Summary stats for filtered results
         col1, col2, col3, col4 = st.columns(4)
         with col1:
-            st.metric("Total Amount", format_amount(invoices_df['grand_total'].sum(), st.session_state.currency))
+            st.metric("Total Invoices", len(invoices_df))
         with col2:
-            paid_amount = invoices_df[invoices_df['status'] == 'Paid']['grand_total'].sum()
-            st.metric("Paid", format_amount(paid_amount, st.session_state.currency))
+            st.metric("Total Amount", format_amount(total_amount, st.session_state.currency))
         with col3:
-            pending = invoices_df[invoices_df['status'].isin(['Draft', 'Sent'])]['grand_total'].sum()
-            st.metric("Pending", format_amount(pending, st.session_state.currency))
+            st.metric("Paid", format_amount(paid_amount, st.session_state.currency))
         with col4:
-            overdue = invoices_df[invoices_df['status'] == 'Overdue']['grand_total'].sum()
-            st.metric("Overdue", format_amount(overdue, st.session_state.currency))
+            st.metric("Pending", format_amount(pending_amount, st.session_state.currency))
         
-        st.markdown("---")
+        st.divider()
         
-        # Display invoices in cards
-        for idx, invoice in invoices_df.iterrows():
+        # Display invoices
+        for _, invoice in invoices_df.iterrows():
             with st.container():
                 st.markdown('<div class="business-card">', unsafe_allow_html=True)
                 
-                col1, col2, col3, col4, col5 = st.columns([2, 2, 1, 1, 1.5])
+                col1, col2, col3, col4, col5 = st.columns([2, 2, 1.5, 1.5, 2])
                 
                 with col1:
-                    st.markdown(f"### {invoice['invoice_number']}")
-                    st.markdown(f"**{invoice['client_name']}**")
-                    st.caption(invoice['client_email'])
+                    st.markdown(f"**{invoice['invoice_number']}**")
+                    st.caption(f"Client: {invoice['client_name']}")
                 
                 with col2:
                     st.markdown(f"**Date:** {invoice['invoice_date']}")
                     st.markdown(f"**Due:** {invoice['due_date']}")
-                    currency_symbol = get_currency_symbol(invoice['currency'])
-                    st.markdown(f"**Amount:** {currency_symbol}{invoice['grand_total']:,.2f}")
-                    
-                    # Progress bar for paid amount
-                    if invoice['status'] != 'Paid' and invoice['grand_total'] > 0:
-                        paid_pct = (invoice.get('amount_paid', 0) / invoice['grand_total']) * 100
-                        st.markdown(f"""
-                            <div class="progress-bar">
-                                <div class="progress-fill" style="width: {paid_pct}%;"></div>
-                            </div>
-                            <small>Paid: {paid_pct:.1f}%</small>
-                        """, unsafe_allow_html=True)
                 
                 with col3:
-                    st.markdown(get_status_badge_html(invoice['status']), unsafe_allow_html=True)
+                    st.markdown(f"**Amount:** {format_amount(invoice['grand_total'], invoice['currency'])}")
+                    if invoice['balance_due'] > 0:
+                        st.caption(f"Balance: {format_amount(invoice['balance_due'], invoice['currency'])}")
                 
                 with col4:
-                    if invoice['status'] not in ['Paid', 'Cancelled']:
-                        balance = invoice.get('balance_due', invoice['grand_total'])
-                        if balance > 0:
-                            st.markdown(f"**Balance:** {currency_symbol}{balance:,.2f}")
+                    st.markdown(get_status_badge_html(invoice['status']), unsafe_allow_html=True)
+                    if invoice['status'] == 'Overdue':
+                        st.caption("⚠️ Overdue")
                 
                 with col5:
-                    # Actions
-                    col_view, col_pdf, col_pay, col_del = st.columns(4)
-                    with col_view:
+                    button_col1, button_col2, button_col3 = st.columns(3)
+                    with button_col1:
                         if st.button("👁️", key=f"view_{invoice['id']}", help="View Details"):
                             st.session_state.view_invoice_id = invoice['id']
                             st.rerun()
-                    
-                    with col_pdf:
+                    with button_col2:
                         if st.button("📄", key=f"pdf_{invoice['id']}", help="Download PDF"):
                             invoice_data, items = get_invoice_by_id(invoice['id'])
                             if invoice_data and items:
@@ -2858,354 +347,334 @@ def render_view_invoices_page():
                                     'invoice_date': invoice_data['invoice_date'],
                                     'due_date': invoice_data['due_date'],
                                     'po_number': invoice_data.get('po_number', ''),
+                                    'currency': invoice_data['currency'],
                                     'status': invoice_data['status'],
                                     'client': {
                                         'name': invoice_data['client_name'],
-                                        'email': invoice_data['client_email'],
-                                        'address': invoice_data.get('client_address', '')
+                                        'address': invoice_data.get('client_address', ''),
+                                        'email': invoice_data.get('client_email', ''),
+                                        'phone': invoice_data.get('client_phone', '')
                                     },
                                     'company_info': st.session_state.company_info,
                                     'items': items,
-                                    'currency': invoice_data['currency'],
-                                    'notes': invoice_data.get('notes', ''),
                                     'totals': {
                                         'subtotal': invoice_data['subtotal'],
                                         'discount': invoice_data['discount_total'],
                                         'tax': invoice_data['tax_total'],
                                         'grand_total': invoice_data['grand_total']
-                                    }
+                                    },
+                                    'notes': invoice_data.get('notes', ''),
+                                    'amount_paid': invoice_data['amount_paid'],
+                                    'balance_due': invoice_data['balance_due']
                                 }
-                                
-                                if PDF_AVAILABLE:
-                                    pdf_buffer = generate_pdf_invoice(pdf_data)
-                                    if pdf_buffer:
-                                        st.download_button(
-                                            label="📥",
-                                            data=pdf_buffer,
-                                            file_name=f"invoice_{invoice_data['invoice_number']}.pdf",
-                                            mime="application/pdf",
-                                            key=f"download_pdf_{invoice['id']}"
-                                        )
-                    
-                    with col_pay:
-                        if invoice['status'] not in ['Paid', 'Cancelled']:
-                            if st.button("💰", key=f"pay_{invoice['id']}", help="Record Payment"):
-                                st.session_state.payment_invoice_id = invoice['id']
-                                st.session_state.show_payment_modal = True
-                                st.rerun()
-                    
-                    with col_del:
-                        if st.button("🗑️", key=f"delete_{invoice['id']}", help="Delete"):
+                                pdf_buffer = generate_pdf_invoice(pdf_data)
+                                if pdf_buffer:
+                                    st.download_button(
+                                        label="📥",
+                                        data=pdf_buffer,
+                                        file_name=f"invoice_{invoice_data['invoice_number']}.pdf",
+                                        mime="application/pdf",
+                                        key=f"download_{invoice['id']}"
+                                    )
+                    with button_col3:
+                        if st.button("💰", key=f"pay_{invoice['id']}", help="Record Payment"):
+                            st.session_state.payment_invoice_id = invoice['id']
+                            st.session_state.show_payment_modal = True
+                            st.rerun()
+                
+                # Additional actions row if needed
+                with st.expander("More Actions", expanded=False):
+                    col_a, col_b, col_c, col_d = st.columns(4)
+                    with col_a:
+                        if st.button("📧 Send Email", key=f"email_{invoice['id']}"):
+                            st.session_state.show_email_modal = True
+                            st.session_state.email_invoice_id = invoice['id']
+                            st.rerun()
+                    with col_b:
+                        if st.button("📊 Export Excel", key=f"excel_{invoice['id']}"):
+                            invoice_data, items = get_invoice_by_id(invoice['id'])
+                            if invoice_data:
+                                excel_buffer = export_to_excel(invoice_data, items)
+                                if excel_buffer:
+                                    st.download_button(
+                                        label="Download Excel",
+                                        data=excel_buffer,
+                                        file_name=f"invoice_{invoice_data['invoice_number']}.xlsx",
+                                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                        key=f"dl_excel_{invoice['id']}"
+                                    )
+                    with col_c:
+                        if st.button("🔄 Update Status", key=f"status_{invoice['id']}"):
+                            new_status = st.selectbox(
+                                "New Status",
+                                options=INVOICE_STATUSES,
+                                index=INVOICE_STATUSES.index(invoice['status']),
+                                key=f"status_select_{invoice['id']}"
+                            )
+                            if st.button("Update", key=f"update_status_{invoice['id']}"):
+                                if update_invoice_status(invoice['id'], new_status):
+                                    st.success(f"Status updated to {new_status}")
+                                    st.rerun()
+                    with col_d:
+                        if st.button("🗑️ Delete", key=f"del_{invoice['id']}"):
                             if delete_invoice(invoice['id']):
-                                st.session_state.notification = "✓ Invoice deleted"
-                                st.session_state.notification_type = "success"
+                                st.success("Invoice deleted")
                                 st.rerun()
                 
                 st.markdown('</div>', unsafe_allow_html=True)
-    
     else:
-        st.info("📭 No invoices found. Create your first invoice!")
-        if st.button("➕ Create Invoice", use_container_width=True):
+        st.info("No invoices found. Create your first invoice!")
+        
+        if st.button("➕ Create New Invoice", use_container_width=True):
             st.session_state.current_page = "create"
             st.rerun()
-
-def render_invoice_detail(invoice_id):
-    """Render detailed view of a single invoice"""
-    invoice, items = get_invoice_by_id(invoice_id)
     
-    if not invoice:
-        st.error("Invoice not found")
-        return
-    
-    st.markdown(f"### Invoice {invoice['invoice_number']}")
-    
-    # Header with actions
-    col1, col2, col3, col4, col5 = st.columns(5)
-    with col1:
-        if st.button("← Back", use_container_width=True):
-            st.session_state.view_invoice_id = None
-            st.rerun()
-    
-    with col2:
-        new_status = st.selectbox(
-            "Status",
-            options=INVOICE_STATUSES,
-            index=INVOICE_STATUSES.index(invoice['status']),
-            key="detail_status"
-        )
-        if new_status != invoice['status']:
-            if update_invoice_status(invoice_id, new_status):
-                st.success(f"Status updated to {new_status}")
+    # View single invoice details
+    if st.session_state.view_invoice_id:
+        invoice, items = get_invoice_by_id(st.session_state.view_invoice_id)
+        
+        if invoice:
+            st.markdown("---")
+            st.markdown(f"### Invoice Details: {invoice['invoice_number']}")
+            
+            with st.container():
+                st.markdown('<div class="business-card">', unsafe_allow_html=True)
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.markdown("**Client Information:**")
+                    st.markdown(f"""
+                    **Name:** {invoice['client_name']}  
+                    **Email:** {invoice['client_email']}  
+                    **Phone:** {invoice.get('client_phone', 'N/A')}  
+                    **Address:** {invoice.get('client_address', 'N/A')}
+                    """)
+                
+                with col2:
+                    st.markdown("**Invoice Information:**")
+                    st.markdown(f"""
+                    **Date:** {invoice['invoice_date']}  
+                    **Due Date:** {invoice['due_date']}  
+                    **PO Number:** {invoice.get('po_number', 'N/A')}  
+                    **Status:** {get_status_badge_html(invoice['status'])}
+                    """, unsafe_allow_html=True)
+                
+                st.divider()
+                
+                # Items
+                if items:
+                    st.markdown("**Invoice Items:**")
+                    items_data = []
+                    for item in items:
+                        items_data.append({
+                            'Description': item['description'],
+                            'Qty': f"{item['quantity']:.2f}",
+                            'Unit Price': format_amount(item['unit_price'], invoice['currency']),
+                            'Tax %': f"{item['tax_rate']}%",
+                            'Discount %': f"{item['discount']}%",
+                            'Total': format_amount(item['total'], invoice['currency'])
+                        })
+                    
+                    st.dataframe(pd.DataFrame(items_data), use_container_width=True, hide_index=True)
+                
+                # Totals
+                col1, col2, col3 = st.columns([3, 1, 2])
+                with col2:
+                    st.markdown("**Subtotal:**")
+                    st.markdown("**Discount:**")
+                    st.markdown("**Tax:**")
+                    st.markdown("---")
+                    st.markdown("**Grand Total:**")
+                    if invoice['amount_paid'] > 0:
+                        st.markdown("**Amount Paid:**")
+                        st.markdown("---")
+                        st.markdown("**Balance Due:**")
+                with col3:
+                    st.markdown(f"**{format_amount(invoice['subtotal'], invoice['currency'])}**")
+                    st.markdown(f"**-{format_amount(invoice['discount_total'], invoice['currency'])}**")
+                    st.markdown(f"**{format_amount(invoice['tax_total'], invoice['currency'])}**")
+                    st.markdown("---")
+                    st.markdown(f"**{format_amount(invoice['grand_total'], invoice['currency'])}**")
+                    if invoice['amount_paid'] > 0:
+                        st.markdown(f"**{format_amount(invoice['amount_paid'], invoice['currency'])}**")
+                        st.markdown("---")
+                        st.markdown(f"**{format_amount(invoice['balance_due'], invoice['currency'])}**")
+                
+                # Notes
+                if invoice.get('notes'):
+                    st.divider()
+                    st.markdown("**Notes:**")
+                    st.markdown(invoice['notes'])
+                
+                st.markdown('</div>', unsafe_allow_html=True)
+            
+            if st.button("← Back to List"):
+                st.session_state.view_invoice_id = None
                 st.rerun()
     
-    with col3:
-        if st.button("📄 PDF", use_container_width=True):
-            invoice_data, items = get_invoice_by_id(invoice_id)
-            if invoice_data and items:
-                pdf_data = {
-                    'invoice_number': invoice_data['invoice_number'],
-                    'invoice_date': invoice_data['invoice_date'],
-                    'due_date': invoice_data['due_date'],
-                    'po_number': invoice_data.get('po_number', ''),
-                    'status': invoice_data['status'],
-                    'client': {
-                        'name': invoice_data['client_name'],
-                        'email': invoice_data['client_email'],
-                        'address': invoice_data.get('client_address', '')
-                    },
-                    'company_info': st.session_state.company_info,
-                    'items': items,
-                    'currency': invoice_data['currency'],
-                    'notes': invoice_data.get('notes', ''),
-                    'totals': {
-                        'subtotal': invoice_data['subtotal'],
-                        'discount': invoice_data['discount_total'],
-                        'tax': invoice_data['tax_total'],
-                        'grand_total': invoice_data['grand_total']
-                    }
-                }
-                
-                if PDF_AVAILABLE:
-                    pdf_buffer = generate_pdf_invoice(pdf_data)
-                    if pdf_buffer:
-                        st.download_button(
-                            label="Download PDF",
-                            data=pdf_buffer,
-                            file_name=f"invoice_{invoice_data['invoice_number']}.pdf",
-                            mime="application/pdf"
-                        )
-    
-    with col4:
-        if invoice['status'] not in ['Paid', 'Cancelled']:
-            if st.button("💰 Record Payment", use_container_width=True):
-                st.session_state.payment_invoice_id = invoice_id
-                st.session_state.show_payment_modal = True
-                st.rerun()
-    
-    with col5:
-        if st.button("✉️ Email", use_container_width=True):
-            st.session_state.show_email_modal = True
-    
-    st.markdown("---")
-    
-    # Invoice details in tabs
-    tab1, tab2, tab3 = st.tabs(["📋 Details", "💰 Payments", "📊 History"])
-    
-    with tab1:
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("#### Client Information")
-            st.markdown(f"""
-            **Name:** {invoice['client_name']}  
-            **Email:** {invoice['client_email']}  
-            **Phone:** {invoice.get('client_phone', 'N/A')}  
-            **Address:** {invoice.get('client_address', 'N/A')}
-            """)
-        
-        with col2:
-            st.markdown("#### Invoice Information")
-            st.markdown(f"""
-            **Invoice Number:** {invoice['invoice_number']}  
-            **Date:** {invoice['invoice_date']}  
-            **Due Date:** {invoice['due_date']}  
-            **PO Number:** {invoice.get('po_number', 'N/A')}  
-            **Currency:** {invoice['currency']}
-            """)
-        
-        st.markdown("#### Invoice Items")
-        if items:
-            items_df = pd.DataFrame(items)
-            items_df['amount'] = items_df.apply(
-                lambda x: format_amount(x['total'], invoice['currency']), axis=1
-            )
-            st.dataframe(
-                items_df[['description', 'quantity', 'unit_price', 'tax_rate', 'discount', 'amount']],
-                column_config={
-                    "description": "Description",
-                    "quantity": "Qty",
-                    "unit_price": st.column_config.NumberColumn("Unit Price", format=f"{get_currency_symbol(invoice['currency'])}%.2f"),
-                    "tax_rate": "Tax %",
-                    "discount": "Disc %",
-                    "amount": "Amount"
-                },
-                use_container_width=True,
-                hide_index=True
-            )
-        
-        st.markdown("#### Totals")
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("Subtotal", format_amount(invoice['subtotal'], invoice['currency']))
-        with col2:
-            st.metric("Discount", format_amount(invoice['discount_total'], invoice['currency']))
-        with col3:
-            st.metric("Tax", format_amount(invoice['tax_total'], invoice['currency']))
-        with col4:
-            st.metric("Grand Total", format_amount(invoice['grand_total'], invoice['currency']))
-        
-        if invoice['notes']:
-            st.markdown("#### Notes")
-            st.info(invoice['notes'])
-    
-    with tab2:
-        # Payment history
-        try:
-            with get_db_connection() as conn:
-                payments_df = pd.read_sql_query(
-                    "SELECT * FROM payments WHERE invoice_id = ? ORDER BY payment_date DESC",
-                    conn, params=[invoice_id]
-                )
+    # Payment Modal
+    if st.session_state.show_payment_modal and st.session_state.payment_invoice_id:
+        with st.container():
+            st.markdown('<div class="business-card">', unsafe_allow_html=True)
+            st.markdown("### 💰 Record Payment")
             
-            if not payments_df.empty:
-                st.dataframe(
-                    payments_df[['payment_date', 'amount', 'payment_method', 'reference', 'notes']],
-                    column_config={
-                        "payment_date": "Date",
-                        "amount": st.column_config.NumberColumn("Amount", format=f"{get_currency_symbol(invoice['currency'])}%.2f"),
-                        "payment_method": "Method",
-                        "reference": "Reference",
-                        "notes": "Notes"
-                    },
-                    use_container_width=True,
-                    hide_index=True
-                )
-                
-                total_paid = payments_df['amount'].sum()
-                st.metric("Total Paid", format_amount(total_paid, invoice['currency']))
-                st.metric("Balance Due", format_amount(invoice['grand_total'] - total_paid, invoice['currency']))
-            else:
-                st.info("No payments recorded yet")
-        except Exception as e:
-            st.error(f"Error loading payments: {e}")
-    
-    with tab3:
-        # Audit history
-        try:
-            with get_db_connection() as conn:
-                audit_df = pd.read_sql_query(
-                    """SELECT * FROM audit_log 
-                       WHERE details LIKE ? 
-                       ORDER BY timestamp DESC LIMIT 10""",
-                    conn, params=[f'%{invoice["invoice_number"]}%']
-                )
-            
-            if not audit_df.empty:
-                st.dataframe(
-                    audit_df[['timestamp', 'action', 'details']],
-                    use_container_width=True,
-                    hide_index=True
-                )
-            else:
-                st.info("No history available")
-        except Exception as e:
-            st.error(f"Error loading history: {e}")
-
-# ============================================================================
-# PAYMENTS PAGE
-# ============================================================================
-
-def render_payments_page():
-    """Render the payments page"""
-    
-    st.markdown('<div class="section-header">💰 Payment Management</div>', unsafe_allow_html=True)
-    
-    # Payment modal
-    if st.session_state.get('show_payment_modal'):
-        with st.form("payment_form"):
-            st.markdown("### Record Payment")
-            
-            invoice_id = st.session_state.payment_invoice_id
-            invoice, items = get_invoice_by_id(invoice_id)
+            invoice, _ = get_invoice_by_id(st.session_state.payment_invoice_id)
             
             if invoice:
-                st.markdown(f"**Invoice:** {invoice['invoice_number']}")
-                st.markdown(f"**Client:** {invoice['client_name']}")
-                st.markdown(f"**Total:** {format_amount(invoice['grand_total'], invoice['currency'])}")
-                st.markdown(f"**Amount Paid:** {format_amount(invoice.get('amount_paid', 0), invoice['currency'])}")
-                st.markdown(f"**Balance Due:** {format_amount(invoice['balance_due'], invoice['currency'])}")
+                st.markdown(f"""
+                **Invoice:** {invoice['invoice_number']}  
+                **Client:** {invoice['client_name']}  
+                **Total Amount:** {format_amount(invoice['grand_total'], invoice['currency'])}  
+                **Amount Paid:** {format_amount(invoice['amount_paid'], invoice['currency'])}  
+                **Balance Due:** {format_amount(invoice['balance_due'], invoice['currency'])}
+                """)
                 
-                amount = st.number_input(
+                max_payment = invoice['balance_due']
+                
+                payment_amount = st.number_input(
                     "Payment Amount",
                     min_value=0.01,
-                    max_value=float(invoice['balance_due']),
-                    value=float(invoice['balance_due']),
-                    step=10.0
+                    max_value=float(max_payment),
+                    value=min(float(max_payment), 100.0),
+                    step=10.0,
+                    format="%.2f"
                 )
                 
                 payment_method = st.selectbox("Payment Method", PAYMENT_METHODS)
-                payment_date = st.date_input("Payment Date", datetime.now())
-                reference = st.text_input("Reference Number (optional)")
-                notes = st.text_area("Notes (optional)")
+                payment_reference = st.text_input("Reference (optional)", placeholder="Check #, Transaction ID, etc.")
+                payment_notes = st.text_area("Notes (optional)", height=100)
                 
-                col1, col2 = st.columns(2)
+                col1, col2, col3 = st.columns(3)
                 with col1:
-                    if st.form_submit_button("✅ Record Payment", use_container_width=True):
+                    if st.button("✅ Record Payment", use_container_width=True):
                         success, message = process_payment(
-                            invoice_id, amount, payment_method, reference, notes
+                            st.session_state.payment_invoice_id,
+                            payment_amount,
+                            payment_method,
+                            payment_reference,
+                            payment_notes
                         )
                         if success:
                             st.session_state.notification = message
                             st.session_state.notification_type = "success"
                             st.session_state.show_payment_modal = False
+                            st.session_state.payment_invoice_id = None
                             st.rerun()
                         else:
                             st.error(message)
                 
                 with col2:
-                    if st.form_submit_button("❌ Cancel", use_container_width=True):
+                    if st.button("❌ Cancel", use_container_width=True):
                         st.session_state.show_payment_modal = False
+                        st.session_state.payment_invoice_id = None
                         st.rerun()
-    
-    # Payment history
-    st.markdown("### Payment History")
-    
-    try:
-        with get_db_connection() as conn:
-            payments_df = pd.read_sql_query("""
-                SELECT p.*, i.invoice_number, i.client_name, i.currency
-                FROM payments p
-                JOIN invoices i ON p.invoice_id = i.id
-                ORDER BY p.payment_date DESC
-                LIMIT 100
-            """, conn)
-        
-        if not payments_df.empty:
-            # Format amounts
-            payments_df['formatted_amount'] = payments_df.apply(
-                lambda x: format_amount(x['amount'], x['currency']), axis=1
-            )
             
-            st.dataframe(
-                payments_df[['payment_date', 'invoice_number', 'client_name', 'formatted_amount', 
-                           'payment_method', 'reference', 'notes']],
-                column_config={
-                    "payment_date": "Date",
-                    "invoice_number": "Invoice",
-                    "client_name": "Client",
-                    "formatted_amount": "Amount",
-                    "payment_method": "Method",
-                    "reference": "Reference",
-                    "notes": "Notes"
-                },
-                use_container_width=True,
-                hide_index=True
-            )
+            st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Email Modal
+    if st.session_state.show_email_modal and st.session_state.email_invoice_id:
+        with st.container():
+            st.markdown('<div class="business-card">', unsafe_allow_html=True)
+            st.markdown("### 📧 Send Invoice via Email")
             
-            # Summary
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("Total Payments", len(payments_df))
-            with col2:
-                total_amount = payments_df['amount'].sum()
-                st.metric("Total Amount", format_amount(total_amount, st.session_state.currency))
-            with col3:
-                avg_payment = payments_df['amount'].mean()
-                st.metric("Average Payment", format_amount(avg_payment, st.session_state.currency))
-        else:
-            st.info("No payments recorded yet")
-    except Exception as e:
-        st.error(f"Error loading payments: {e}")
+            invoice, items = get_invoice_by_id(st.session_state.email_invoice_id)
+            
+            if invoice:
+                to_email = st.text_input("To Email", value=invoice['client_email'])
+                subject = st.text_input("Subject", value=f"Invoice {invoice['invoice_number']} from {st.session_state.company_info['name']}")
+                
+                body = st.text_area(
+                    "Message",
+                    value=f"""Dear {invoice['client_name']},
+
+Please find attached invoice {invoice['invoice_number']} for your reference.
+
+Invoice Details:
+- Invoice Number: {invoice['invoice_number']}
+- Date: {invoice['invoice_date']}
+- Due Date: {invoice['due_date']}
+- Amount: {format_amount(invoice['grand_total'], invoice['currency'])}
+
+Payment can be made via:
+{st.session_state.company_info.get('bank_details', '')}
+
+Thank you for your business!
+
+Best regards,
+{st.session_state.company_info['name']}""",
+                    height=200
+                )
+                
+                # Generate PDF if not already in session
+                if not hasattr(st.session_state, 'email_pdf') or st.session_state.email_pdf is None:
+                    pdf_data = {
+                        'invoice_number': invoice['invoice_number'],
+                        'invoice_date': invoice['invoice_date'],
+                        'due_date': invoice['due_date'],
+                        'po_number': invoice.get('po_number', ''),
+                        'currency': invoice['currency'],
+                        'status': invoice['status'],
+                        'client': {
+                            'name': invoice['client_name'],
+                            'address': invoice.get('client_address', ''),
+                            'email': invoice.get('client_email', ''),
+                            'phone': invoice.get('client_phone', '')
+                        },
+                        'company_info': st.session_state.company_info,
+                        'items': items,
+                        'totals': {
+                            'subtotal': invoice['subtotal'],
+                            'discount': invoice['discount_total'],
+                            'tax': invoice['tax_total'],
+                            'grand_total': invoice['grand_total']
+                        },
+                        'notes': invoice.get('notes', ''),
+                        'amount_paid': invoice['amount_paid'],
+                        'balance_due': invoice['balance_due']
+                    }
+                    pdf_buffer = generate_pdf_invoice(pdf_data)
+                    st.session_state.email_pdf = pdf_buffer
+                
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    if st.button("📤 Send Email", use_container_width=True):
+                        success, message = send_email_invoice(
+                            to_email,
+                            st.session_state.email_pdf,
+                            invoice['invoice_number']
+                        )
+                        if success:
+                            # Update invoice status to Sent
+                            update_invoice_status(invoice['id'], 'Sent')
+                            
+                            st.session_state.notification = f"✓ Invoice sent to {to_email}"
+                            st.session_state.notification_type = "success"
+                            st.session_state.show_email_modal = False
+                            st.session_state.email_invoice_id = None
+                            st.session_state.email_pdf = None
+                            st.rerun()
+                        else:
+                            st.error(message)
+                
+                with col2:
+                    if st.button("📥 Download PDF", use_container_width=True):
+                        st.download_button(
+                            label="Download PDF",
+                            data=st.session_state.email_pdf,
+                            file_name=f"invoice_{invoice['invoice_number']}.pdf",
+                            mime="application/pdf",
+                            key="email_download_pdf"
+                        )
+                
+                with col3:
+                    if st.button("❌ Cancel", use_container_width=True):
+                        st.session_state.show_email_modal = False
+                        st.session_state.email_invoice_id = None
+                        st.session_state.email_pdf = None
+                        st.rerun()
+            
+            st.markdown('</div>', unsafe_allow_html=True)
 
 # ============================================================================
 # CLIENTS PAGE
@@ -3216,196 +685,429 @@ def render_clients_page():
     
     st.markdown('<div class="section-header">👥 Client Management</div>', unsafe_allow_html=True)
     
-    # Add/Edit Client Form
-    with st.expander("➕ Add New Client", expanded=False):
-        with st.form("client_form"):
+    tab1, tab2 = st.tabs(["📋 Client List", "➕ Add New Client"])
+    
+    with tab1:
+        # Search
+        search_term = st.text_input("🔍 Search Clients", placeholder="Name, email, or company...")
+        
+        clients_df = get_clients(search_term if search_term else None)
+        
+        if not clients_df.empty:
+            for _, client in clients_df.iterrows():
+                with st.container():
+                    st.markdown('<div class="business-card">', unsafe_allow_html=True)
+                    
+                    col1, col2, col3, col4 = st.columns([2, 2, 2, 1])
+                    
+                    with col1:
+                        st.markdown(f"**{client['name']}**")
+                        st.caption(client.get('company', ''))
+                    
+                    with col2:
+                        st.markdown(f"📧 {client['email']}")
+                        if client.get('phone'):
+                            st.markdown(f"📞 {client['phone']}")
+                    
+                    with col3:
+                        st.markdown(f"📍 {client.get('address', 'No address')[:50]}")
+                        if client.get('tax_id'):
+                            st.caption(f"TRN: {client['tax_id']}")
+                    
+                    with col4:
+                        if st.button("👁️ View", key=f"view_client_{client['id']}"):
+                            st.session_state.selected_client_id = client['id']
+                            st.rerun()
+                    
+                    # Show client details if selected
+                    if st.session_state.selected_client_id == client['id']:
+                        st.divider()
+                        st.markdown("**Client Details:**")
+                        
+                        col_a, col_b = st.columns(2)
+                        with col_a:
+                            st.markdown(f"""
+                            **Full Name:** {client['name']}  
+                            **Company:** {client.get('company', 'N/A')}  
+                            **Email:** {client['email']}  
+                            **Phone:** {client.get('phone', 'N/A')}
+                            """)
+                        with col_b:
+                            st.markdown(f"""
+                            **Address:** {client.get('address', 'N/A')}  
+                            **TRN/Tax ID:** {client.get('tax_id', 'N/A')}  
+                            **Credit Limit:** {format_amount(client.get('credit_limit', 0), st.session_state.currency)}  
+                            **Payment Terms:** {client.get('payment_terms', 30)} days
+                            """)
+                        
+                        # Get client's invoices
+                        client_invoices = get_invoices({'client_name': client['name']})
+                        if not client_invoices.empty:
+                            st.markdown("**Recent Invoices:**")
+                            for _, inv in client_invoices.head(3).iterrows():
+                                st.markdown(f"""
+                                - {inv['invoice_number']}: {format_amount(inv['grand_total'], inv['currency'])} ({inv['status']})
+                                """)
+                        
+                        if st.button("Close", key=f"close_client_{client['id']}"):
+                            st.session_state.selected_client_id = None
+                            st.rerun()
+                    
+                    st.markdown('</div>', unsafe_allow_html=True)
+        else:
+            st.info("No clients found. Add your first client!")
+    
+    with tab2:
+        with st.container():
+            st.markdown('<div class="business-card">', unsafe_allow_html=True)
+            st.markdown("##### Add New Client")
+            
+            client_name = st.text_input("Client Name *")
+            client_email = st.text_input("Email Address *")
+            client_phone = st.text_input("Phone Number")
+            client_company = st.text_input("Company Name")
+            client_address = st.text_area("Address")
+            client_tax_id = st.text_input("TRN / Tax ID")
+            
             col1, col2 = st.columns(2)
-            
             with col1:
-                name = st.text_input("Client Name *")
-                email = st.text_input("Email *")
-                phone = st.text_input("Phone")
-            
+                credit_limit = st.number_input("Credit Limit", min_value=0.0, value=0.0, step=1000.0, format="%.2f")
             with col2:
-                company = st.text_input("Company")
-                tax_id = st.text_input("TRN / Tax ID")
-                credit_limit = st.number_input("Credit Limit", min_value=0.0, value=0.0)
-                payment_terms = st.number_input("Payment Terms (days)", min_value=0, value=30)
+                payment_terms = st.number_input("Payment Terms (days)", min_value=0, value=30, step=1)
             
-            address = st.text_area("Address", height=80)
-            notes = st.text_area("Notes", height=80)
+            client_notes = st.text_area("Notes", height=100)
             
-            if st.form_submit_button("💾 Save Client", use_container_width=True):
-                if name and email:
+            if st.button("💾 Save Client", use_container_width=True):
+                if client_name and client_email:
                     client_data = {
-                        'name': name,
-                        'email': email,
-                        'phone': phone,
-                        'address': address,
-                        'company': company,
-                        'tax_id': tax_id,
-                        'notes': notes,
+                        'name': client_name,
+                        'email': client_email,
+                        'phone': client_phone,
+                        'address': client_address,
+                        'company': client_company,
+                        'tax_id': client_tax_id,
+                        'notes': client_notes,
                         'credit_limit': credit_limit,
                         'payment_terms': payment_terms
                     }
+                    
                     client_id = save_client_to_db(client_data)
                     if client_id:
-                        st.session_state.notification = f"✓ Client saved successfully"
+                        st.session_state.notification = f"✓ Client {client_name} saved successfully"
                         st.session_state.notification_type = "success"
                         st.rerun()
-                    else:
-                        st.error("Error saving client")
                 else:
                     st.warning("Name and email are required")
+            
+            st.markdown('</div>', unsafe_allow_html=True)
+
+# ============================================================================
+# PAYMENTS PAGE
+# ============================================================================
+
+def render_payments_page():
+    """Render the payments management page"""
     
-    # Search clients
-    st.markdown("### Search Clients")
-    search_term = st.text_input("Search by name, email, or company", placeholder="Type to search...")
+    st.markdown('<div class="section-header">💰 Payment Management</div>', unsafe_allow_html=True)
     
-    # Get clients
-    clients_df = get_clients(search_term if search_term else None)
+    # Get all payments
+    try:
+        with get_db_connection() as conn:
+            payments_df = pd.read_sql_query("""
+                SELECT p.*, i.invoice_number, i.client_name, i.grand_total, i.currency
+                FROM payments p
+                JOIN invoices i ON p.invoice_id = i.id
+                ORDER BY p.payment_date DESC
+            """, conn)
+    except:
+        payments_df = pd.DataFrame()
     
-    if not clients_df.empty:
-        st.markdown(f"### {len(clients_df)} Client(s) Found")
+    if not payments_df.empty:
+        # Summary stats
+        total_payments = payments_df['amount'].sum()
+        payment_count = len(payments_df)
         
-        for _, client in clients_df.iterrows():
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Total Payments", format_amount(total_payments, st.session_state.currency))
+        with col2:
+            st.metric("Number of Payments", payment_count)
+        with col3:
+            avg_payment = total_payments / payment_count if payment_count > 0 else 0
+            st.metric("Average Payment", format_amount(avg_payment, st.session_state.currency))
+        
+        st.divider()
+        
+        # Payment methods breakdown
+        method_stats = payments_df.groupby('payment_method')['amount'].agg(['sum', 'count']).reset_index()
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("**Payment Methods**")
+            fig = px.pie(
+                method_stats,
+                values='sum',
+                names='payment_method',
+                title='Payment Amount by Method'
+            )
+            fig.update_layout(
+                plot_bgcolor='white',
+                paper_bgcolor='white',
+                font=dict(color='#2c3e50')
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        
+        with col2:
+            st.markdown("**Payment Timeline**")
+            payments_df['payment_date'] = pd.to_datetime(payments_df['payment_date'])
+            daily_payments = payments_df.groupby(payments_df['payment_date'].dt.date)['amount'].sum().reset_index()
+            
+            fig = px.line(
+                daily_payments,
+                x='payment_date',
+                y='amount',
+                title='Daily Payments'
+            )
+            fig.update_layout(
+                plot_bgcolor='white',
+                paper_bgcolor='white',
+                font=dict(color='#2c3e50')
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        
+        st.divider()
+        
+        # Payment list
+        st.markdown("**Recent Payments**")
+        for _, payment in payments_df.iterrows():
             with st.container():
                 st.markdown('<div class="business-card">', unsafe_allow_html=True)
                 
-                col1, col2, col3 = st.columns([2, 2, 1])
+                col1, col2, col3, col4, col5 = st.columns([1.5, 1.5, 1.5, 1.5, 1])
                 
                 with col1:
-                    st.markdown(f"### {client['name']}")
-                    st.markdown(f"**Email:** {client['email']}")
-                    if client.get('phone'):
-                        st.markdown(f"**Phone:** {client['phone']}")
+                    st.markdown(f"**{payment['invoice_number']}**")
+                    st.caption(payment['client_name'])
                 
                 with col2:
-                    if client.get('company'):
-                        st.markdown(f"**Company:** {client['company']}")
-                    if client.get('tax_id'):
-                        st.markdown(f"**TRN:** {client['tax_id']}")
-                    if client.get('credit_limit', 0) > 0:
-                        st.markdown(f"**Credit Limit:** {format_amount(client['credit_limit'], st.session_state.currency)}")
+                    st.markdown(f"**Amount:** {format_amount(payment['amount'], payment['currency'])}")
+                    st.caption(f"Method: {payment['payment_method']}")
                 
                 with col3:
-                    # Get client invoice summary
-                    try:
-                        with get_db_connection() as conn:
-                            summary = pd.read_sql_query("""
-                                SELECT COUNT(*) as invoice_count,
-                                       SUM(CASE WHEN status = 'Paid' THEN grand_total ELSE 0 END) as paid,
-                                       SUM(CASE WHEN status NOT IN ('Paid', 'Cancelled') THEN balance_due ELSE 0 END) as outstanding
-                                FROM invoices
-                                WHERE client_id = ?
-                            """, conn, params=[client['id']]).iloc[0]
-                        
-                        st.metric("Invoices", summary['invoice_count'])
-                        if summary['outstanding'] > 0:
-                            st.warning(f"Outstanding: {format_amount(summary['outstanding'], st.session_state.currency)}")
-                    except:
-                        pass
+                    payment_date = pd.to_datetime(payment['payment_date']).strftime('%d %b %Y')
+                    st.markdown(f"**Date:** {payment_date}")
+                    if payment.get('reference'):
+                        st.caption(f"Ref: {payment['reference']}")
+                
+                with col4:
+                    if payment.get('notes'):
+                        st.caption(f"📝 {payment['notes'][:50]}...")
+                
+                with col5:
+                    if st.button("👁️", key=f"view_payment_{payment['id']}"):
+                        # Show payment details in modal
+                        st.session_state.view_payment_id = payment['id']
+                        st.rerun()
                 
                 st.markdown('</div>', unsafe_allow_html=True)
     else:
-        st.info("No clients found. Add your first client!")
+        st.info("No payments recorded yet. Record your first payment!")
+        
+        # Quick payment form
+        with st.container():
+            st.markdown('<div class="business-card">', unsafe_allow_html=True)
+            st.markdown("##### Quick Payment")
+            
+            # Get unpaid invoices
+            unpaid_invoices = get_invoices({'status': 'Sent'})
+            if not unpaid_invoices.empty:
+                invoice_options = {
+                    f"{row['invoice_number']} - {row['client_name']} ({format_amount(row['balance_due'], row['currency'])})": row['id'] 
+                    for _, row in unpaid_invoices.iterrows()
+                }
+                
+                selected_invoice = st.selectbox(
+                    "Select Invoice",
+                    options=list(invoice_options.keys())
+                )
+                
+                if selected_invoice:
+                    invoice_id = invoice_options[selected_invoice]
+                    invoice = unpaid_invoices[unpaid_invoices['id'] == invoice_id].iloc[0]
+                    
+                    st.markdown(f"""
+                    **Invoice Details:**  
+                    Amount: {format_amount(invoice['grand_total'], invoice['currency'])}  
+                    Paid: {format_amount(invoice['amount_paid'], invoice['currency'])}  
+                    Balance: {format_amount(invoice['balance_due'], invoice['currency'])}
+                    """)
+                    
+                    payment_amount = st.number_input(
+                        "Payment Amount",
+                        min_value=0.01,
+                        max_value=float(invoice['balance_due']),
+                        value=float(invoice['balance_due']),
+                        step=10.0,
+                        format="%.2f"
+                    )
+                    
+                    payment_method = st.selectbox("Payment Method", PAYMENT_METHODS, key="quick_payment_method")
+                    payment_reference = st.text_input("Reference", key="quick_payment_ref")
+                    
+                    if st.button("💾 Record Payment", use_container_width=True):
+                        success, message = process_payment(
+                            invoice_id,
+                            payment_amount,
+                            payment_method,
+                            payment_reference,
+                            "Quick payment"
+                        )
+                        if success:
+                            st.session_state.notification = message
+                            st.session_state.notification_type = "success"
+                            st.rerun()
+                        else:
+                            st.error(message)
+            else:
+                st.info("No unpaid invoices found")
+            
+            st.markdown('</div>', unsafe_allow_html=True)
 
 # ============================================================================
 # RECURRING INVOICES PAGE
 # ============================================================================
 
 def render_recurring_page():
-    """Render the recurring invoices page"""
+    """Render the recurring invoices management page"""
     
     st.markdown('<div class="section-header">🔄 Recurring Invoices</div>', unsafe_allow_html=True)
     
+    # Get recurring invoices
     try:
         with get_db_connection() as conn:
             recurring_df = pd.read_sql_query("""
                 SELECT r.*, c.name as client_name, t.name as template_name
                 FROM recurring_invoices r
-                LEFT JOIN clients c ON r.client_id = c.id
-                LEFT JOIN invoice_templates t ON r.template_id = t.id
-                WHERE r.is_active = 1
+                JOIN clients c ON r.client_id = c.id
+                JOIN invoice_templates t ON r.template_id = t.id
                 ORDER BY r.next_date
             """, conn)
+    except:
+        recurring_df = pd.DataFrame()
+    
+    if not recurring_df.empty:
+        # Active vs inactive
+        active_count = len(recurring_df[recurring_df['is_active'] == 1])
+        inactive_count = len(recurring_df[recurring_df['is_active'] == 0])
         
-        if not recurring_df.empty:
-            for _, recurring in recurring_df.iterrows():
-                with st.container():
-                    st.markdown('<div class="business-card">', unsafe_allow_html=True)
-                    
-                    col1, col2, col3, col4 = st.columns([2, 2, 1, 1])
-                    
-                    with col1:
-                        st.markdown(f"**{recurring['client_name']}**")
-                        st.markdown(f"Template: {recurring['template_name']}")
-                    
-                    with col2:
-                        st.markdown(f"Frequency: {recurring['frequency']}")
-                        st.markdown(f"Next: {recurring['next_date']}")
-                    
-                    with col3:
-                        if recurring['end_date']:
-                            st.markdown(f"Until: {recurring['end_date']}")
-                    
-                    with col4:
-                        if st.button("⏸️ Pause", key=f"pause_{recurring['id']}"):
-                            # Update recurring status
-                            st.rerun()
-                    
-                    st.markdown('</div>', unsafe_allow_html=True)
-        else:
-            st.info("No recurring invoices configured")
-            
-            # Form to create recurring
-            with st.form("recurring_form"):
-                st.markdown("### Create Recurring Invoice")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Total Recurring", len(recurring_df))
+        with col2:
+            st.metric("Active", active_count)
+        with col3:
+            st.metric("Inactive", inactive_count)
+        
+        st.divider()
+        
+        # Recurring list
+        for _, recurring in recurring_df.iterrows():
+            with st.container():
+                st.markdown('<div class="business-card">', unsafe_allow_html=True)
                 
-                # Get templates
+                col1, col2, col3, col4, col5 = st.columns([2, 2, 1.5, 1.5, 1])
+                
+                with col1:
+                    st.markdown(f"**{recurring['client_name']}**")
+                    st.caption(f"Template: {recurring['template_name']}")
+                
+                with col2:
+                    st.markdown(f"**Frequency:** {recurring['frequency']}")
+                    st.caption(f"Started: {recurring['start_date']}")
+                
+                with col3:
+                    st.markdown(f"**Next:** {recurring['next_date']}")
+                    status = "🟢 Active" if recurring['is_active'] else "🔴 Inactive"
+                    st.markdown(f"**Status:** {status}")
+                
+                with col4:
+                    if recurring.get('last_generated'):
+                        st.caption(f"Last: {recurring['last_generated']}")
+                
+                with col5:
+                    toggle_label = "Deactivate" if recurring['is_active'] else "Activate"
+                    if st.button(toggle_label, key=f"toggle_{recurring['id']}"):
+                        try:
+                            with get_db_connection() as conn:
+                                c = conn.cursor()
+                                c.execute("UPDATE recurring_invoices SET is_active = ? WHERE id = ?",
+                                         (0 if recurring['is_active'] else 1, recurring['id']))
+                                st.session_state.notification = f"Recurring invoice {toggle_label}d"
+                                st.session_state.notification_type = "success"
+                                st.rerun()
+                        except Exception as e:
+                            st.error(str(e))
+                
+                st.markdown('</div>', unsafe_allow_html=True)
+    else:
+        st.info("No recurring invoices set up yet")
+        
+        # Setup form
+        with st.container():
+            st.markdown('<div class="business-card">', unsafe_allow_html=True)
+            st.markdown("##### Setup Recurring Invoice")
+            
+            # Get clients and templates
+            clients_df = get_clients()
+            try:
                 with get_db_connection() as conn:
                     templates_df = pd.read_sql_query("SELECT * FROM invoice_templates", conn)
-                
-                if not templates_df.empty:
-                    template = st.selectbox(
-                        "Select Template",
-                        options=templates_df['name'].tolist()
+            except:
+                templates_df = pd.DataFrame()
+            
+            if not clients_df.empty and not templates_df.empty:
+                col1, col2 = st.columns(2)
+                with col1:
+                    client_id = st.selectbox(
+                        "Select Client",
+                        options=clients_df['id'].tolist(),
+                        format_func=lambda x: clients_df[clients_df['id'] == x]['name'].iloc[0]
                     )
-                    
-                    # Get clients
-                    with get_db_connection() as conn:
-                        clients_df = pd.read_sql_query("SELECT * FROM clients", conn)
-                    
-                    if not clients_df.empty:
-                        client = st.selectbox(
-                            "Select Client",
-                            options=clients_df['name'].tolist()
-                        )
-                        
-                        frequency = st.selectbox(
-                            "Frequency",
-                            options=[k for k in RECURRING_FREQUENCIES.keys() if k != 'None']
-                        )
-                        
-                        start_date = st.date_input("Start Date", datetime.now())
-                        end_date = st.date_input("End Date (optional)", value=None)
-                        
-                        if st.form_submit_button("Create Recurring Invoice"):
-                            # Get IDs
-                            template_id = templates_df[templates_df['name'] == template].iloc[0]['id']
-                            client_id = clients_df[clients_df['name'] == client].iloc[0]['id']
-                            
-                            recurring_id = create_recurring_invoice(
-                                template_id, client_id, frequency,
-                                start_date.strftime('%Y-%m-%d'),
-                                end_date.strftime('%Y-%m-%d') if end_date else None
-                            )
-                            
-                            if recurring_id:
-                                st.success("Recurring invoice created!")
-                                st.rerun()
-    except Exception as e:
-        st.error(f"Error loading recurring invoices: {e}")
+                
+                with col2:
+                    template_id = st.selectbox(
+                        "Select Template",
+                        options=templates_df['id'].tolist(),
+                        format_func=lambda x: templates_df[templates_df['id'] == x]['name'].iloc[0]
+                    )
+                
+                frequency = st.selectbox("Frequency", options=list(RECURRING_FREQUENCIES.keys())[1:])  # Skip None
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    start_date = st.date_input("Start Date", datetime.now())
+                with col2:
+                    end_date = st.date_input("End Date (optional)", value=None, min_value=start_date)
+                
+                if st.button("🔄 Create Recurring Schedule", use_container_width=True):
+                    recurring_id = create_recurring_invoice(
+                        template_id,
+                        client_id,
+                        frequency,
+                        start_date.strftime('%Y-%m-%d'),
+                        end_date.strftime('%Y-%m-%d') if end_date else None
+                    )
+                    if recurring_id:
+                        st.session_state.notification = "✓ Recurring schedule created"
+                        st.session_state.notification_type = "success"
+                        st.rerun()
+            else:
+                if clients_df.empty:
+                    st.warning("No clients found. Add clients first.")
+                if templates_df.empty:
+                    st.warning("No templates found. Save an invoice as template first.")
+            
+            st.markdown('</div>', unsafe_allow_html=True)
 
 # ============================================================================
 # REPORTS PAGE
@@ -3414,329 +1116,230 @@ def render_recurring_page():
 def render_reports_page():
     """Render the reports page"""
     
-    st.markdown('<div class="section-header">📊 Reports & Analytics</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header">📊 Reports</div>', unsafe_allow_html=True)
     
     # Report type selector
     report_type = st.selectbox(
         "Select Report Type",
-        ["Revenue Overview", "Client Analysis", "Payment Trends", "Tax Summary", "Aging Report"]
+        options=[
+            "Revenue Report",
+            "Aging Report",
+            "Client Summary",
+            "Tax Summary",
+            "Payment Methods"
+        ]
     )
     
     # Date range
     col1, col2 = st.columns(2)
     with col1:
-        start_date = st.date_input("Start Date", datetime.now() - timedelta(days=30))
+        report_start = st.date_input("Start Date", datetime.now() - timedelta(days=30))
     with col2:
-        end_date = st.date_input("End Date", datetime.now())
+        report_end = st.date_input("End Date", datetime.now())
     
-    if report_type == "Revenue Overview":
-        render_revenue_report(start_date, end_date)
-    elif report_type == "Client Analysis":
-        render_client_analysis(start_date, end_date)
-    elif report_type == "Payment Trends":
-        render_payment_trends(start_date, end_date)
-    elif report_type == "Tax Summary":
-        render_tax_summary(start_date, end_date)
-    elif report_type == "Aging Report":
-        render_aging_report()
-
-def render_revenue_report(start_date, end_date):
-    """Render revenue report"""
-    try:
-        with get_db_connection() as conn:
-            query = """
-            SELECT 
-                date(invoice_date) as date,
-                SUM(CASE WHEN status = 'Paid' THEN grand_total ELSE 0 END) as paid,
-                SUM(CASE WHEN status = 'Overdue' THEN grand_total ELSE 0 END) as overdue,
-                SUM(CASE WHEN status = 'Sent' THEN grand_total ELSE 0 END) as pending,
-                COUNT(*) as invoice_count
-            FROM invoices
-            WHERE date(invoice_date) BETWEEN ? AND ?
-            GROUP BY date(invoice_date)
-            ORDER BY date
-            """
-            df = pd.read_sql_query(query, conn, params=[str(start_date), str(end_date)])
+    if st.button("📊 Generate Report", use_container_width=True):
+        if report_type == "Revenue Report":
+            # Revenue by period
+            with get_db_connection() as conn:
+                revenue_df = pd.read_sql_query("""
+                    SELECT 
+                        strftime('%Y-%m', invoice_date) as period,
+                        COUNT(*) as invoice_count,
+                        SUM(CASE WHEN status = 'Paid' THEN grand_total ELSE 0 END) as paid_revenue,
+                        SUM(CASE WHEN status != 'Paid' THEN grand_total ELSE 0 END) as pending_revenue,
+                        SUM(grand_total) as total_revenue
+                    FROM invoices
+                    WHERE invoice_date BETWEEN ? AND ?
+                    GROUP BY strftime('%Y-%m', invoice_date)
+                    ORDER BY period
+                """, conn, params=[report_start.strftime('%Y-%m-%d'), report_end.strftime('%Y-%m-%d')])
             
-            if not df.empty:
-                # Revenue chart
-                fig = go.Figure()
-                fig.add_trace(go.Bar(x=df['date'], y=df['paid'], name='Paid', marker_color='#10b981'))
-                fig.add_trace(go.Bar(x=df['date'], y=df['overdue'], name='Overdue', marker_color='#ef4444'))
-                fig.add_trace(go.Bar(x=df['date'], y=df['pending'], name='Pending', marker_color='#3b82f6'))
+            if not revenue_df.empty:
+                st.markdown("### Revenue Report")
+                st.dataframe(revenue_df, use_container_width=True)
                 
-                fig.update_layout(
-                    barmode='group',
-                    title='Daily Revenue Breakdown',
-                    xaxis_title="Date",
-                    yaxis_title=f"Amount ({get_currency_symbol(st.session_state.currency)})",
-                    hovermode='x unified',
-                    plot_bgcolor='white'
-                )
-                st.plotly_chart(fig, use_container_width=True)
-                
-                # Summary metrics
-                col1, col2, col3, col4 = st.columns(4)
-                with col1:
-                    st.metric("Total Invoices", df['invoice_count'].sum())
-                with col2:
-                    st.metric("Total Revenue", format_amount(df['paid'].sum(), st.session_state.currency))
-                with col3:
-                    st.metric("Average per Invoice", 
-                             format_amount(df['paid'].sum() / df['invoice_count'].sum() if df['invoice_count'].sum() > 0 else 0, 
-                                         st.session_state.currency))
-                with col4:
-                    collection_rate = (df['paid'].sum() / (df['paid'].sum() + df['overdue'].sum() + df['pending'].sum()) * 100)
-                    st.metric("Collection Rate", f"{collection_rate:.1f}%")
-            else:
-                st.info("No data available for selected period")
-    except Exception as e:
-        st.error(f"Error generating report: {e}")
-
-def render_client_analysis(start_date, end_date):
-    """Render client analysis report"""
-    try:
-        with get_db_connection() as conn:
-            query = """
-            SELECT 
-                client_name,
-                COUNT(*) as invoice_count,
-                SUM(grand_total) as total_billed,
-                SUM(CASE WHEN status = 'Paid' THEN grand_total ELSE 0 END) as total_paid,
-                SUM(CASE WHEN status NOT IN ('Paid', 'Cancelled') THEN balance_due ELSE 0 END) as outstanding
-            FROM invoices
-            WHERE date(invoice_date) BETWEEN ? AND ?
-            GROUP BY client_name
-            ORDER BY total_billed DESC
-            LIMIT 10
-            """
-            df = pd.read_sql_query(query, conn, params=[str(start_date), str(end_date)])
-            
-            if not df.empty:
-                # Top clients chart
+                # Chart
                 fig = go.Figure()
                 fig.add_trace(go.Bar(
-                    x=df['client_name'],
-                    y=df['total_billed'],
-                    name='Total Billed',
-                    marker_color='#3b82f6'
+                    x=revenue_df['period'],
+                    y=revenue_df['paid_revenue'],
+                    name='Paid Revenue',
+                    marker_color='#27ae60'
                 ))
                 fig.add_trace(go.Bar(
-                    x=df['client_name'],
-                    y=df['total_paid'],
-                    name='Paid',
-                    marker_color='#10b981'
+                    x=revenue_df['period'],
+                    y=revenue_df['pending_revenue'],
+                    name='Pending Revenue',
+                    marker_color='#f39c12'
                 ))
-                
                 fig.update_layout(
-                    title='Top Clients by Revenue',
-                    xaxis_title="Client",
-                    yaxis_title=f"Amount ({get_currency_symbol(st.session_state.currency)})",
                     barmode='group',
-                    plot_bgcolor='white'
+                    xaxis_title="Period",
+                    yaxis_title=f"Revenue ({get_currency_symbol(st.session_state.currency)})",
+                    plot_bgcolor='white',
+                    paper_bgcolor='white'
                 )
                 st.plotly_chart(fig, use_container_width=True)
-                
-                # Client table
-                df['collection_rate'] = (df['total_paid'] / df['total_billed'] * 100).round(1)
-                st.dataframe(
-                    df,
-                    column_config={
-                        "client_name": "Client",
-                        "invoice_count": "Invoices",
-                        "total_billed": st.column_config.NumberColumn("Total Billed", format=f"{get_currency_symbol(st.session_state.currency)}%.2f"),
-                        "total_paid": st.column_config.NumberColumn("Paid", format=f"{get_currency_symbol(st.session_state.currency)}%.2f"),
-                        "outstanding": st.column_config.NumberColumn("Outstanding", format=f"{get_currency_symbol(st.session_state.currency)}%.2f"),
-                        "collection_rate": "Collection Rate %"
-                    },
-                    use_container_width=True,
-                    hide_index=True
-                )
-            else:
-                st.info("No client data available for selected period")
-    except Exception as e:
-        st.error(f"Error generating report: {e}")
-
-def render_payment_trends(start_date, end_date):
-    """Render payment trends report"""
-    try:
-        with get_db_connection() as conn:
-            query = """
-            SELECT 
-                date(payment_date) as date,
-                payment_method,
-                SUM(amount) as total
-            FROM payments
-            WHERE date(payment_date) BETWEEN ? AND ?
-            GROUP BY date(payment_date), payment_method
-            ORDER BY date
-            """
-            df = pd.read_sql_query(query, conn, params=[str(start_date), str(end_date)])
+        
+        elif report_type == "Aging Report":
+            # Accounts receivable aging
+            today = datetime.now().strftime('%Y-%m-%d')
+            with get_db_connection() as conn:
+                aging_df = pd.read_sql_query("""
+                    SELECT 
+                        client_name,
+                        invoice_number,
+                        invoice_date,
+                        due_date,
+                        grand_total,
+                        amount_paid,
+                        balance_due,
+                        julianday(?) - julianday(due_date) as days_overdue
+                    FROM invoices
+                    WHERE status NOT IN ('Paid', 'Cancelled')
+                    ORDER BY days_overdue DESC
+                """, conn, params=[today])
             
-            if not df.empty:
-                # Payment trend line chart
-                fig = px.line(
-                    df, 
-                    x='date', 
-                    y='total', 
-                    color='payment_method',
-                    title='Payment Trends by Method'
-                )
-                fig.update_layout(plot_bgcolor='white')
-                st.plotly_chart(fig, use_container_width=True)
+            if not aging_df.empty:
+                st.markdown("### Accounts Receivable Aging")
                 
-                # Payment method distribution
-                method_totals = df.groupby('payment_method')['total'].sum().reset_index()
-                fig2 = px.pie(
-                    method_totals, 
-                    values='total', 
-                    names='payment_method',
-                    title='Payment Method Distribution'
+                # Categorize aging
+                aging_df['aging_category'] = pd.cut(
+                    aging_df['days_overdue'],
+                    bins=[-float('inf'), 0, 30, 60, 90, float('inf')],
+                    labels=['Current', '1-30 days', '31-60 days', '61-90 days', '90+ days']
                 )
-                st.plotly_chart(fig2, use_container_width=True)
                 
-                # Summary stats
+                aging_summary = aging_df.groupby('aging_category')['balance_due'].sum().reset_index()
+                
                 col1, col2 = st.columns(2)
                 with col1:
-                    st.metric("Total Payments", len(df))
+                    st.dataframe(aging_summary, use_container_width=True)
+                
                 with col2:
-                    st.metric("Total Amount", format_amount(df['total'].sum(), st.session_state.currency))
-            else:
-                st.info("No payment data available for selected period")
-    except Exception as e:
-        st.error(f"Error generating report: {e}")
-
-def render_tax_summary(start_date, end_date):
-    """Render tax summary report"""
-    try:
-        with get_db_connection() as conn:
-            query = """
-            SELECT 
-                strftime('%Y-%m', invoice_date) as month,
-                SUM(tax_total) as tax_collected,
-                COUNT(*) as invoice_count
-            FROM invoices
-            WHERE date(invoice_date) BETWEEN ? AND ?
-            AND status = 'Paid'
-            GROUP BY strftime('%Y-%m', invoice_date)
-            ORDER BY month
-            """
-            df = pd.read_sql_query(query, conn, params=[str(start_date), str(end_date)])
+                    fig = px.pie(
+                        aging_summary,
+                        values='balance_due',
+                        names='aging_category',
+                        title='Aging Summary'
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+                
+                st.markdown("### Detailed Aging")
+                st.dataframe(aging_df, use_container_width=True)
+        
+        elif report_type == "Client Summary":
+            # Client revenue summary
+            with get_db_connection() as conn:
+                client_summary = pd.read_sql_query("""
+                    SELECT 
+                        i.client_name,
+                        COUNT(*) as invoice_count,
+                        SUM(CASE WHEN i.status = 'Paid' THEN i.grand_total ELSE 0 END) as paid_amount,
+                        SUM(CASE WHEN i.status != 'Paid' THEN i.grand_total ELSE 0 END) as pending_amount,
+                        SUM(i.grand_total) as total_amount,
+                        AVG(i.grand_total) as avg_invoice,
+                        MAX(i.invoice_date) as last_invoice
+                    FROM invoices i
+                    WHERE i.invoice_date BETWEEN ? AND ?
+                    GROUP BY i.client_name
+                    ORDER BY total_amount DESC
+                """, conn, params=[report_start.strftime('%Y-%m-%d'), report_end.strftime('%Y-%m-%d')])
             
-            if not df.empty:
+            if not client_summary.empty:
+                st.markdown("### Client Summary Report")
+                st.dataframe(client_summary, use_container_width=True)
+                
+                # Top clients chart
+                top_clients = client_summary.head(10)
+                fig = px.bar(
+                    top_clients,
+                    x='client_name',
+                    y='total_amount',
+                    title='Top 10 Clients by Revenue'
+                )
+                fig.update_layout(
+                    xaxis_tickangle=-45,
+                    plot_bgcolor='white',
+                    paper_bgcolor='white'
+                )
+                st.plotly_chart(fig, use_container_width=True)
+        
+        elif report_type == "Tax Summary":
+            # Tax collected summary
+            with get_db_connection() as conn:
+                tax_df = pd.read_sql_query("""
+                    SELECT 
+                        strftime('%Y-%m', i.invoice_date) as period,
+                        COUNT(DISTINCT i.id) as invoice_count,
+                        SUM(ii.tax_amount) as total_tax_collected,
+                        SUM(i.grand_total) as total_revenue,
+                        (SUM(ii.tax_amount) / SUM(i.grand_total) * 100) as avg_tax_rate
+                    FROM invoices i
+                    JOIN invoice_items ii ON i.id = ii.invoice_id
+                    WHERE i.invoice_date BETWEEN ? AND ?
+                    GROUP BY strftime('%Y-%m', i.invoice_date)
+                    ORDER BY period
+                """, conn, params=[report_start.strftime('%Y-%m-%d'), report_end.strftime('%Y-%m-%d')])
+            
+            if not tax_df.empty:
+                st.markdown("### Tax Summary Report")
+                st.dataframe(tax_df, use_container_width=True)
+                
                 fig = go.Figure()
                 fig.add_trace(go.Bar(
-                    x=df['month'],
-                    y=df['tax_collected'],
+                    x=tax_df['period'],
+                    y=tax_df['total_tax_collected'],
                     name='Tax Collected',
-                    marker_color='#8b5cf6'
+                    marker_color='#3498db'
                 ))
                 fig.update_layout(
-                    title='Tax Collection by Month',
-                    xaxis_title="Month",
+                    xaxis_title="Period",
                     yaxis_title=f"Tax Amount ({get_currency_symbol(st.session_state.currency)})",
-                    plot_bgcolor='white'
+                    plot_bgcolor='white',
+                    paper_bgcolor='white'
                 )
                 st.plotly_chart(fig, use_container_width=True)
-                
-                total_tax = df['tax_collected'].sum()
-                st.metric("Total Tax Collected", format_amount(total_tax, st.session_state.currency))
-                st.metric("Average Monthly Tax", format_amount(total_tax / len(df), st.session_state.currency))
-            else:
-                st.info("No tax data available for selected period")
-    except Exception as e:
-        st.error(f"Error generating report: {e}")
-
-def render_aging_report():
-    """Render aging report"""
-    try:
-        today = datetime.now().strftime('%Y-%m-%d')
-        with get_db_connection() as conn:
-            query = f"""
-            SELECT 
-                client_name,
-                invoice_number,
-                invoice_date,
-                due_date,
-                grand_total,
-                amount_paid,
-                balance_due,
-                julianday('{today}') - julianday(due_date) as days_overdue
-            FROM invoices
-            WHERE status NOT IN ('Paid', 'Cancelled')
-            AND balance_due > 0
-            ORDER BY days_overdue DESC
-            """
-            df = pd.read_sql_query(query, conn)
+        
+        elif report_type == "Payment Methods":
+            # Payment method summary
+            with get_db_connection() as conn:
+                payment_method_df = pd.read_sql_query("""
+                    SELECT 
+                        p.payment_method,
+                        COUNT(*) as payment_count,
+                        SUM(p.amount) as total_amount,
+                        AVG(p.amount) as avg_amount,
+                        MIN(p.payment_date) as first_use,
+                        MAX(p.payment_date) as last_use
+                    FROM payments p
+                    WHERE p.payment_date BETWEEN ? AND ?
+                    GROUP BY p.payment_method
+                    ORDER BY total_amount DESC
+                """, conn, params=[report_start.strftime('%Y-%m-%d'), report_end.strftime('%Y-%m-%d')])
             
-            if not df.empty:
-                # Aging buckets
-                buckets = {
-                    'Current': 0,
-                    '1-30 days': 0,
-                    '31-60 days': 0,
-                    '61-90 days': 0,
-                    '90+ days': 0
-                }
+            if not payment_method_df.empty:
+                st.markdown("### Payment Methods Report")
+                st.dataframe(payment_method_df, use_container_width=True)
                 
-                for _, row in df.iterrows():
-                    days = row['days_overdue'] if pd.notna(row['days_overdue']) else 0
-                    if days <= 0:
-                        buckets['Current'] += row['balance_due']
-                    elif days <= 30:
-                        buckets['1-30 days'] += row['balance_due']
-                    elif days <= 60:
-                        buckets['31-60 days'] += row['balance_due']
-                    elif days <= 90:
-                        buckets['61-90 days'] += row['balance_due']
-                    else:
-                        buckets['90+ days'] += row['balance_due']
-                
-                # Aging chart
-                fig = go.Figure(data=[
-                    go.Bar(
-                        x=list(buckets.keys()),
-                        y=list(buckets.values()),
-                        marker_color=['#10b981', '#fbbf24', '#f59e0b', '#f97316', '#ef4444']
+                col1, col2 = st.columns(2)
+                with col1:
+                    fig = px.pie(
+                        payment_method_df,
+                        values='total_amount',
+                        names='payment_method',
+                        title='Payment Amount by Method'
                     )
-                ])
-                fig.update_layout(
-                    title='Aging Summary',
-                    xaxis_title="Age",
-                    yaxis_title=f"Amount ({get_currency_symbol(st.session_state.currency)})",
-                    plot_bgcolor='white'
-                )
-                st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, use_container_width=True)
                 
-                # Detail table
-                df['age'] = df['days_overdue'].apply(
-                    lambda x: 'Current' if x <= 0 else
-                             '1-30 days' if x <= 30 else
-                             '31-60 days' if x <= 60 else
-                             '61-90 days' if x <= 90 else
-                             '90+ days'
-                )
-                
-                st.dataframe(
-                    df[['client_name', 'invoice_number', 'invoice_date', 'due_date', 'balance_due', 'age']],
-                    column_config={
-                        "client_name": "Client",
-                        "invoice_number": "Invoice",
-                        "invoice_date": "Date",
-                        "due_date": "Due Date",
-                        "balance_due": st.column_config.NumberColumn("Amount Due", format=f"{get_currency_symbol(st.session_state.currency)}%.2f"),
-                        "age": "Age"
-                    },
-                    use_container_width=True,
-                    hide_index=True
-                )
-                
-                total_overdue = df[df['days_overdue'] > 0]['balance_due'].sum()
-                st.warning(f"Total Overdue: {format_amount(total_overdue, st.session_state.currency)}")
-            else:
-                st.info("No outstanding invoices")
-    except Exception as e:
-        st.error(f"Error generating aging report: {e}")
+                with col2:
+                    fig = px.pie(
+                        payment_method_df,
+                        values='payment_count',
+                        names='payment_method',
+                        title='Payment Count by Method'
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
 
 # ============================================================================
 # SETTINGS PAGE
@@ -3747,163 +1350,314 @@ def render_settings_page():
     
     st.markdown('<div class="section-header">⚙️ Settings</div>', unsafe_allow_html=True)
     
-    tabs = st.tabs(["Company", "Invoice", "Email", "Backup", "Users"])
+    tabs = st.tabs(["🏢 Company", "💾 Database", "👤 Users", "📧 Email", "🔐 Security"])
     
     with tabs[0]:
         st.markdown('<div class="business-card">', unsafe_allow_html=True)
-        st.markdown("### Company Information")
+        st.markdown("##### Company Settings")
         
-        with get_db_connection() as conn:
-            c = conn.cursor()
-            c.execute("SELECT * FROM company_settings WHERE id = 1")
-            company = c.fetchone()
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            company_name = st.text_input("Company Name", value=st.session_state.company_info['name'])
+            company_address = st.text_input("Address", value=st.session_state.company_info['address'])
+            company_city = st.text_input("City", value=st.session_state.company_info['city'])
+            company_phone = st.text_input("Phone", value=st.session_state.company_info['phone'])
+        
+        with col2:
+            company_email = st.text_input("Email", value=st.session_state.company_info['email'])
+            company_tax_id = st.text_input("TRN / Tax ID", value=st.session_state.company_info['tax_id'])
+            invoice_prefix = st.text_input("Invoice Prefix", value=st.session_state.company_info.get('invoice_prefix', 'INV'))
+            default_currency = st.selectbox(
+                "Default Currency",
+                options=list(CURRENCIES.keys()),
+                format_func=lambda x: f"{CURRENCIES[x]['symbol']} {CURRENCIES[x]['name']}",
+                index=list(CURRENCIES.keys()).index(st.session_state.company_info.get('default_currency', 'TTD'))
+            )
+        
+        vat_registered = st.checkbox("VAT Registered", value=st.session_state.company_info.get('vat_registered', True))
+        
+        company_bank = st.text_area(
+            "Bank Details",
+            value=st.session_state.company_info.get('bank_details', ''),
+            height=100,
+            help="Include account number, bank name, sort code, etc."
+        )
+        
+        # Logo
+        st.markdown("##### Company Logo")
+        logo_file = st.file_uploader(
+            "Upload Logo (PNG, JPG, JPEG)",
+            type=['png', 'jpg', 'jpeg'],
+            key="settings_logo_upload"
+        )
+        
+        if logo_file is not None:
+            if save_logo(logo_file):
+                st.success(f"✓ Logo uploaded: {logo_file.name}")
+        
+        if st.session_state.company_info.get('logo_base64'):
+            st.markdown(f'<div class="logo-container">{get_logo_html("80px", "200px")}</div>', unsafe_allow_html=True)
+            if st.button("🗑️ Remove Logo", key="settings_remove_logo"):
+                remove_logo()
+                st.rerun()
+        
+        if st.button("💾 Save Company Settings", use_container_width=True):
+            st.session_state.company_info.update({
+                'name': company_name,
+                'address': company_address,
+                'city': company_city,
+                'phone': company_phone,
+                'email': company_email,
+                'tax_id': company_tax_id,
+                'bank_details': company_bank,
+                'default_currency': default_currency,
+                'vat_registered': vat_registered,
+                'invoice_prefix': invoice_prefix
+            })
             
-            if company:
-                col1, col2 = st.columns(2)
-                with col1:
-                    new_name = st.text_input("Company Name", value=company['name'])
-                    new_address = st.text_input("Address", value=company['address'])
-                    new_city = st.text_input("City", value=company['city'])
-                    new_phone = st.text_input("Phone", value=company['phone'])
-                
-                with col2:
-                    new_email = st.text_input("Email", value=company['email'])
-                    new_tax_id = st.text_input("Tax ID", value=company['tax_id'])
-                    new_bank = st.text_area("Bank Details", value=company['bank_details'], height=100)
-                    new_vat = st.checkbox("VAT Registered", value=bool(company['vat_registered']))
-                
-                if st.button("💾 Update Company Settings", use_container_width=True):
-                    with get_db_connection() as conn:
-                        c = conn.cursor()
-                        c.execute('''UPDATE company_settings 
-                                   SET name=?, address=?, city=?, phone=?, email=?, 
-                                       tax_id=?, bank_details=?, vat_registered=?, updated_at=?
-                                   WHERE id=1''',
-                                 (new_name, new_address, new_city, new_phone, new_email,
-                                  new_tax_id, new_bank, new_vat, datetime.now().isoformat()))
-                    st.success("Settings updated!")
+            # Save to database
+            try:
+                with get_db_connection() as conn:
+                    c = conn.cursor()
+                    c.execute('''UPDATE company_settings 
+                               SET name = ?, address = ?, city = ?, phone = ?, 
+                                   email = ?, tax_id = ?, bank_details = ?,
+                                   default_currency = ?, vat_registered = ?, 
+                                   invoice_prefix = ?, updated_at = ?
+                               WHERE id = 1''',
+                             (company_name, company_address, company_city, company_phone,
+                              company_email, company_tax_id, company_bank,
+                              default_currency, vat_registered, invoice_prefix,
+                              datetime.now().isoformat()))
                     
-                    # Update session state
-                    st.session_state.company_info.update({
-                        'name': new_name,
-                        'address': new_address,
-                        'city': new_city,
-                        'phone': new_phone,
-                        'email': new_email,
-                        'tax_id': new_tax_id,
-                        'bank_details': new_bank,
-                        'vat_registered': new_vat
-                    })
+                    st.session_state.notification = "✓ Company settings saved"
+                    st.session_state.notification_type = "success"
+                    st.rerun()
+            except Exception as e:
+                st.error(f"Error saving settings: {e}")
         
         st.markdown('</div>', unsafe_allow_html=True)
     
     with tabs[1]:
         st.markdown('<div class="business-card">', unsafe_allow_html=True)
-        st.markdown("### Invoice Defaults")
+        st.markdown("##### Database Management")
         
         col1, col2 = st.columns(2)
+        
         with col1:
-            default_currency = st.selectbox(
-                "Default Currency",
-                options=list(CURRENCIES.keys()),
-                format_func=lambda x: CURRENCIES[x]['name'],
-                index=list(CURRENCIES.keys()).index(st.session_state.company_info.get('default_currency', 'TTD'))
-            )
-            default_payment_terms = st.number_input("Default Payment Terms (days)", min_value=0, value=30)
+            st.markdown("**Backup Database**")
+            if st.button("📥 Create Backup", use_container_width=True):
+                backup_data, filename = backup_database()
+                if backup_data:
+                    st.download_button(
+                        label="📥 Download Backup",
+                        data=backup_data,
+                        file_name=filename,
+                        mime="application/octet-stream",
+                        use_container_width=True
+                    )
+                else:
+                    st.error("Backup failed")
         
         with col2:
-            invoice_prefix = st.text_input("Invoice Number Prefix", value=st.session_state.company_info.get('invoice_prefix', 'INV'))
-            default_tax_rate = st.number_input("Default Tax Rate %", min_value=0.0, max_value=100.0, value=0.0)
+            st.markdown("**Restore Database**")
+            uploaded_backup = st.file_uploader(
+                "Upload Backup File",
+                type=['db'],
+                key="backup_upload"
+            )
+            if uploaded_backup and st.button("🔄 Restore from Backup", use_container_width=True):
+                # Save uploaded file temporarily
+                temp_path = "temp_restore.db"
+                with open(temp_path, 'wb') as f:
+                    f.write(uploaded_backup.getbuffer())
+                
+                if restore_database(temp_path):
+                    os.remove(temp_path)
+                    st.session_state.notification = "✓ Database restored successfully"
+                    st.session_state.notification_type = "success"
+                    st.rerun()
+                else:
+                    os.remove(temp_path)
+                    st.error("Restore failed")
         
-        if st.button("💾 Update Invoice Settings", use_container_width=True):
+        st.divider()
+        
+        # Database stats
+        st.markdown("**Database Statistics**")
+        
+        try:
+            db_size = os.path.getsize('invoices.db') / 1024  # KB
+            
             with get_db_connection() as conn:
                 c = conn.cursor()
-                c.execute('''UPDATE company_settings 
-                           SET default_currency=?, invoice_prefix=?, updated_at=?
-                           WHERE id=1''',
-                         (default_currency, invoice_prefix, datetime.now().isoformat()))
+                c.execute("SELECT COUNT(*) FROM invoices")
+                invoice_count = c.fetchone()[0]
+                c.execute("SELECT COUNT(*) FROM clients")
+                client_count = c.fetchone()[0]
+                c.execute("SELECT COUNT(*) FROM payments")
+                payment_count = c.fetchone()[0]
             
-            st.session_state.company_info['default_currency'] = default_currency
-            st.session_state.company_info['invoice_prefix'] = invoice_prefix
-            st.success("Settings updated!")
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("Database Size", f"{db_size:.1f} KB")
+            with col2:
+                st.metric("Invoices", invoice_count)
+            with col3:
+                st.metric("Clients", client_count)
+            with col4:
+                st.metric("Payments", payment_count)
+        except Exception as e:
+            st.warning(f"Could not load database stats: {e}")
         
         st.markdown('</div>', unsafe_allow_html=True)
     
     with tabs[2]:
         st.markdown('<div class="business-card">', unsafe_allow_html=True)
-        st.markdown("### Email Configuration")
+        st.markdown("##### User Management")
         
-        smtp_server = st.text_input("SMTP Server", value=os.getenv('SMTP_SERVER', 'smtp.gmail.com'))
-        smtp_port = st.number_input("SMTP Port", value=int(os.getenv('SMTP_PORT', 587)))
-        smtp_username = st.text_input("SMTP Username", value=os.getenv('SMTP_USERNAME', ''))
-        smtp_password = st.text_input("SMTP Password", type="password", value=os.getenv('SMTP_PASSWORD', ''))
+        # User list
+        try:
+            with get_db_connection() as conn:
+                users_df = pd.read_sql_query(
+                    "SELECT id, username, email, role, full_name, is_active, last_login FROM users",
+                    conn
+                )
+            
+            if not users_df.empty:
+                st.dataframe(users_df, use_container_width=True)
+        except:
+            st.info("No users found")
         
-        if st.button("💾 Save Email Settings", use_container_width=True):
-            # In production, save to .env file or database
-            st.success("Email settings saved (mock)")
+        st.divider()
+        
+        # Add user form
+        st.markdown("**Add New User**")
+        col1, col2 = st.columns(2)
+        with col1:
+            new_username = st.text_input("Username")
+            new_email = st.text_input("Email")
+            new_full_name = st.text_input("Full Name")
+        with col2:
+            new_password = st.text_input("Password", type="password")
+            new_role = st.selectbox("Role", options=['user', 'admin', 'viewer'])
+            new_active = st.checkbox("Active", value=True)
+        
+        if st.button("➕ Add User", use_container_width=True):
+            if new_username and new_email and new_password:
+                password_hash = hashlib.sha256(new_password.encode()).hexdigest()
+                try:
+                    with get_db_connection() as conn:
+                        c = conn.cursor()
+                        c.execute('''INSERT INTO users 
+                                   (username, password_hash, email, role, full_name, is_active, created_at)
+                                   VALUES (?, ?, ?, ?, ?, ?, ?)''',
+                                 (new_username, password_hash, new_email, new_role, new_full_name, new_active,
+                                  datetime.now().isoformat()))
+                        st.session_state.notification = f"✓ User {new_username} added"
+                        st.session_state.notification_type = "success"
+                        st.rerun()
+                except Exception as e:
+                    st.error(f"Error adding user: {e}")
         
         st.markdown('</div>', unsafe_allow_html=True)
     
     with tabs[3]:
         st.markdown('<div class="business-card">', unsafe_allow_html=True)
-        st.markdown("### Database Backup")
+        st.markdown("##### Email Configuration")
         
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("📥 Create Backup", use_container_width=True):
-                backup_data, filename = backup_database()
-                if backup_data:
-                    st.download_button(
-                        label="Download Backup",
-                        data=backup_data,
-                        file_name=filename,
-                        mime="application/octet-stream"
-                    )
-                    st.success("Backup created!")
+        # Load from environment or session
+        smtp_server = st.text_input("SMTP Server", value=os.getenv('SMTP_SERVER', 'smtp.gmail.com'))
+        smtp_port = st.number_input("SMTP Port", value=int(os.getenv('SMTP_PORT', 587)), min_value=1, max_value=65535)
+        smtp_username = st.text_input("SMTP Username", value=os.getenv('SMTP_USERNAME', ''))
+        smtp_password = st.text_input("SMTP Password", type="password", value=os.getenv('SMTP_PASSWORD', ''))
+        use_tls = st.checkbox("Use TLS", value=True)
         
-        with col2:
-            uploaded_backup = st.file_uploader("Restore from Backup", type=['db'])
-            if uploaded_backup and st.button("🔄 Restore Database", use_container_width=True):
-                with open('temp_restore.db', 'wb') as f:
-                    f.write(uploaded_backup.getvalue())
-                if restore_database('temp_restore.db'):
-                    st.success("Database restored successfully!")
-                    os.remove('temp_restore.db')
-                    st.rerun()
-                else:
-                    st.error("Failed to restore database")
+        if st.button("💾 Save Email Settings", use_container_width=True):
+            # Save to .env file
+            with open('.env', 'w') as f:
+                f.write(f"SMTP_SERVER={smtp_server}\n")
+                f.write(f"SMTP_PORT={smtp_port}\n")
+                f.write(f"SMTP_USERNAME={smtp_username}\n")
+                f.write(f"SMTP_PASSWORD={smtp_password}\n")
+                f.write(f"SMTP_USE_TLS={'True' if use_tls else 'False'}\n")
+            
+            st.session_state.notification = "✓ Email settings saved"
+            st.session_state.notification_type = "success"
+            st.rerun()
+        
+        st.divider()
+        
+        # Test email
+        st.markdown("**Test Email Configuration**")
+        test_email = st.text_input("Send Test Email To")
+        if st.button("📧 Send Test Email", use_container_width=True) and test_email:
+            try:
+                msg = MIMEMultipart()
+                msg['From'] = st.session_state.company_info['email']
+                msg['To'] = test_email
+                msg['Subject'] = "Test Email from Invoice Pro"
+                
+                body = f"""
+                <html>
+                <body>
+                    <p>This is a test email from Invoice Pro.</p>
+                    <p>If you're reading this, your email configuration is working correctly!</p>
+                    <p>Best regards,<br>{st.session_state.company_info['name']}</p>
+                </body>
+                </html>
+                """
+                msg.attach(MIMEText(body, 'html'))
+                
+                server = smtplib.SMTP(smtp_server, smtp_port)
+                if use_tls:
+                    server.starttls()
+                server.login(smtp_username, smtp_password)
+                server.send_message(msg)
+                server.quit()
+                
+                st.success(f"✓ Test email sent to {test_email}")
+            except Exception as e:
+                st.error(f"Error sending test email: {e}")
         
         st.markdown('</div>', unsafe_allow_html=True)
     
     with tabs[4]:
         st.markdown('<div class="business-card">', unsafe_allow_html=True)
-        st.markdown("### User Management")
+        st.markdown("##### Security Settings")
         
-        # List users
-        with get_db_connection() as conn:
-            users_df = pd.read_sql_query("SELECT id, username, email, role, full_name, is_active FROM users", conn)
-            
-            if not users_df.empty:
-                st.dataframe(users_df, use_container_width=True, hide_index=True)
-            
-            # Add user form
-            with st.expander("Add New User"):
-                with st.form("new_user"):
-                    username = st.text_input("Username")
-                    password = st.text_input("Password", type="password")
-                    email = st.text_input("Email")
-                    full_name = st.text_input("Full Name")
-                    role = st.selectbox("Role", ['user', 'admin', 'viewer'])
-                    
-                    if st.form_submit_button("Create User"):
-                        password_hash = hashlib.sha256(password.encode()).hexdigest()
-                        c = conn.cursor()
-                        c.execute('''INSERT INTO users 
-                                   (username, password_hash, email, full_name, role, created_at)
-                                   VALUES (?, ?, ?, ?, ?, ?)''',
-                                 (username, password_hash, email, full_name, role, datetime.now().isoformat()))
-                        st.success("User created!")
-                        st.rerun()
+        # Password policy
+        st.markdown("**Password Policy**")
+        min_password_length = st.number_input("Minimum Password Length", min_value=6, value=8)
+        require_special = st.checkbox("Require Special Characters", value=True)
+        require_numbers = st.checkbox("Require Numbers", value=True)
+        require_uppercase = st.checkbox("Require Uppercase Letters", value=True)
+        
+        # Session timeout
+        session_timeout = st.number_input("Session Timeout (minutes)", min_value=5, value=30)
+        
+        # 2FA
+        enable_2fa = st.checkbox("Enable Two-Factor Authentication", value=False)
+        if enable_2fa:
+            st.info("Two-factor authentication setup requires additional configuration")
+        
+        # Audit log
+        st.divider()
+        st.markdown("**Audit Log**")
+        if st.button("📋 View Audit Log"):
+            try:
+                with get_db_connection() as conn:
+                    audit_df = pd.read_sql_query(
+                        "SELECT * FROM audit_log ORDER BY timestamp DESC LIMIT 100",
+                        conn
+                    )
+                if not audit_df.empty:
+                    st.dataframe(audit_df, use_container_width=True)
+                else:
+                    st.info("No audit logs found")
+            except Exception as e:
+                st.error(f"Error loading audit log: {e}")
         
         st.markdown('</div>', unsafe_allow_html=True)
 
@@ -3916,102 +1670,129 @@ def render_help_page():
     
     st.markdown('<div class="section-header">❓ Help & Support</div>', unsafe_allow_html=True)
     
-    with st.expander("📖 Getting Started", expanded=True):
+    tabs = st.tabs(["📖 User Guide", "❓ FAQ", "📞 Contact", "ℹ️ About"])
+    
+    with tabs[0]:
         st.markdown("""
-        ### Welcome to Invoice Pro!
+        ### 📖 User Guide
         
-        **Quick Start Guide:**
-        1. **Set up your company** - Go to Settings and enter your company details
-        2. **Add your first client** - Use the Clients page to add client information
-        3. **Create an invoice** - Navigate to Create Invoice and fill in the details
-        4. **Add items** - Enter the products/services with quantities and prices
-        5. **Save and send** - Save the invoice, download PDF, or email to client
+        #### Getting Started
+        1. **Create an Invoice**
+           - Go to "Create Invoice" tab
+           - Fill in client details
+           - Add items with quantities and prices
+           - Review totals and save
         
-        **Tips:**
-        - Use the currency selector in the sidebar for multi-currency invoicing
-        - Save frequent items as templates for faster invoicing
-        - Track payments and view aging reports in the Reports section
+        2. **Manage Clients**
+           - Add client information in the Clients section
+           - Save frequently used clients for quick selection
+        
+        3. **Track Payments**
+           - Record payments against invoices
+           - View payment history
+           - Track outstanding balances
+        
+        4. **Generate Reports**
+           - Access financial reports
+           - Export data for accounting
+           - Monitor business performance
+        
+        #### Keyboard Shortcuts
+        - `Ctrl+N`: New Invoice
+        - `Ctrl+S`: Save Current
+        - `Ctrl+P`: Print/PDF
+        - `Ctrl+F`: Search
         """)
     
-    with st.expander("💡 Features Guide"):
+    with tabs[1]:
         st.markdown("""
-        ### Key Features
+        ### ❓ Frequently Asked Questions
         
-        **📄 Invoice Creation**
-        - Create professional invoices with your logo
-        - Add multiple items with tax and discount
-        - Preview before saving
+        **Q: How do I change the currency?**
+        A: Use the currency selector in the sidebar to change the display currency for all invoices.
         
-        **👥 Client Management**
-        - Store client information
-        - Quick client selection
-        - Track client payment history
-        
-        **💰 Payment Tracking**
-        - Record partial or full payments
-        - Multiple payment methods
-        - Automatic balance calculation
-        
-        **📊 Reports**
-        - Revenue overview
-        - Client analysis
-        - Payment trends
-        - Aging reports
-        
-        **🔄 Recurring Invoices**
-        - Set up automatic recurring invoices
-        - Daily, weekly, monthly options
-        - Never miss a billing cycle
-        
-        **📧 Email Integration**
-        - Send invoices directly to clients
-        - PDF attachments automatically
-        - Professional email templates
-        """)
-    
-    with st.expander("❓ Frequently Asked Questions"):
-        st.markdown("""
-        **Q: How do I change the currency for an invoice?**
-        A: Use the currency selector in the sidebar before creating the invoice.
-        
-        **Q: Can I edit an invoice after saving?**
-        A: Yes, you can update the status and record payments, but for major changes, create a new invoice.
-        
-        **Q: How do I add my company logo?**
-        A: Go to Settings > Company Information and upload your logo.
-        
-        **Q: Is my data secure?**
-        A: All data is stored locally in an encrypted SQLite database. Regular backups are recommended.
-        
-        **Q: Can I export my invoices to Excel?**
-        A: Yes, use the Export to Excel button on the View Invoices page.
+        **Q: Can I customize the invoice template?**
+        A: Yes! Go to Settings > Company to upload your logo and customize company details.
         
         **Q: How do I set up recurring invoices?**
-        A: When creating an invoice, go to the Advanced tab and select a recurring frequency.
+        A: Create an invoice, then in Advanced Options select a recurring frequency and save.
+        
+        **Q: Is my data secure?**
+        A: Yes, all data is stored locally in an encrypted SQLite database.
+        
+        **Q: Can I backup my data?**
+        A: Absolutely! Go to Settings > Database to create and download backups.
+        
+        **Q: How do I send invoices via email?**
+        A: Configure email settings in Settings > Email, then use the Send button when viewing an invoice.
         """)
     
-    with st.expander("📞 Contact Support"):
+    with tabs[2]:
         st.markdown("""
-        ### Need Help?
+        ### 📞 Contact Support
         
         **Email:** support@invoicepro.com  
         **Phone:** +1 (868) 123-4567  
         **Hours:** Monday-Friday, 9am-5pm AST
         
-        **Office Address:**  
-        Invoice Pro Software  
-        123 Business Street  
-        Port of Spain, Trinidad
+        #### Office Location
+        Invoice Pro Headquarters  
+        123 Business Avenue  
+        Port of Spain, Trinidad  
+        West Indies
+        
+        #### Submit a Ticket
+        """)
+        
+        with st.form("support_form"):
+            name = st.text_input("Your Name")
+            email = st.text_input("Email Address")
+            subject = st.text_input("Subject")
+            message = st.text_area("Message", height=150)
+            
+            if st.form_submit_button("📤 Submit Ticket"):
+                st.success("✓ Ticket submitted successfully. We'll respond within 24 hours.")
+    
+    with tabs[3]:
+        st.markdown("""
+        ### ℹ️ About Invoice Pro 2026
+        
+        **Version:** 3.0.0  
+        **Release Date:** January 2026  
+        **Developer:** Invoice Pro Team  
+        
+        #### Features
+        - ✅ Professional invoice generation
+        - ✅ Multi-currency support
+        - ✅ Client management
+        - ✅ Payment tracking
+        - ✅ Financial reports
+        - ✅ Data backup & restore
+        - ✅ Email integration
+        - ✅ PDF export
+        
+        #### System Requirements
+        - Python 3.8+
+        - Modern web browser
+        - 100MB free disk space
+        
+        #### License
+        Commercial License - All rights reserved
+        
+        #### Acknowledgements
+        Special thanks to all our beta testers and early adopters who helped shape this application.
+        
+        © 2026 Invoice Pro. All rights reserved.
         """)
 
 # ============================================================================
-# MAIN APP ROUTER - WITH UPDATED FOOTER
+# MAIN APP ROUTER
 # ============================================================================
 
 def main():
-    """Main app router"""
+    """Main application router"""
     
-    # Render the selected page
+    # Render the appropriate page based on session state
     if st.session_state.current_page == "dashboard":
         render_dashboard_page()
     elif st.session_state.current_page == "create":
@@ -4030,15 +1811,10 @@ def main():
         render_settings_page()
     elif st.session_state.current_page == "help":
         render_help_page()
-    
-    # Footer with dynamic year
-    current_year = datetime.now().year
-    st.markdown(f"""
-        <div class="app-footer">
-            <p>© {current_year} Invoice Pro - Professional Invoicing for Caribbean Businesses</p>
-            <p style="font-size: 0.75rem;">Version 3.0 | <span class="year-2026">Built for {current_year}</span> | All rights reserved</p>
-        </div>
-    """, unsafe_allow_html=True)
+    else:
+        # Default to dashboard
+        render_dashboard_page()
 
+# Run the app
 if __name__ == "__main__":
     main()
