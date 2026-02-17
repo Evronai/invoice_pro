@@ -1,39 +1,12 @@
-# Core dependencies
+# Specify Python version in your deployment configuration
+# Python 3.9 - 3.11 recommended
+
 streamlit==1.31.0
-pandas==2.2.0
+pandas==2.0.3  # Older version for better compatibility
 numpy==1.24.3
-
-# Database
-sqlite3  # Built-in, no need to install
-
-# Visualization
 plotly==5.18.0
-
-# PDF Generation
 reportlab==4.1.0
-
-# Excel Export
 openpyxl==3.1.2
-
-# Security
 bcrypt==4.0.1
-
-# Email
-# smtplib is built-in
-# email is built-in
-
-# Utilities
 python-dotenv==1.0.0
 python-dateutil==2.8.2
-
-# Optional but recommended for better performance
-pyarrow==14.0.1  # For faster pandas operations
-
-# Development tools (optional)
-black==24.1.1  # Code formatting
-pylint==3.0.3  # Code linting
-pytest==7.4.4  # Testing
-
-# For additional features (optional)
-xlsxwriter==3.1.9  # Alternative Excel writer
-Pillow==10.2.0  # Image processing for logos
